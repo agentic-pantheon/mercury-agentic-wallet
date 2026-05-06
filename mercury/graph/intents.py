@@ -8,6 +8,8 @@ from typing import Any, Literal, cast
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from mercury.alchemy.networks import UnknownAlchemyNetworkError, alchemy_network_to_mercury_chain, mercury_chain_to_alchemy_network
+from mercury.chains import UnsupportedChainError, get_chain_by_name
 from mercury.models.addresses import normalize_evm_address
 
 
@@ -21,6 +23,7 @@ class ReadOnlyIntentKind(StrEnum):
     CONTRACT_READ = "contract_read"
     KNOWN_ADDRESS = "known_address"
     TOKEN_PRICES = "token_prices"
+    PORTFOLIO_TOKENS = "portfolio_tokens"
     UNSUPPORTED = "unsupported"
 
 
@@ -199,6 +202,98 @@ class TokenPricesIntent(BaseReadOnlyIntent):
         return self.model_copy(update={"tokens": entries, "token_address": None, "chain": None})
 
 
+class PortfolioTokensIntent(BaseReadOnlyIntent):
+    """List wallet token balances across chains via Alchemy Portfolio API."""
+
+    kind: Literal[ReadOnlyIntentKind.PORTFOLIO_TOKENS] = ReadOnlyIntentKind.PORTFOLIO_TOKENS
+    wallet_address: str = Field(min_length=1)
+    chains: list[str] | None = None
+    networks: list[str] | None = None
+    with_metadata: bool = True
+    with_prices: bool = True
+    include_native_tokens: bool = True
+    include_erc20_tokens: bool = True
+    page_key: str | None = None
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_portfolio_wallet(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+    @field_validator("page_key")
+    @classmethod
+    def normalize_portfolio_page_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def _resolve_chains(self) -> PortfolioTokensIntent:
+        has_chains = bool(self.chains)
+        has_networks = bool(self.networks)
+
+        if has_chains and has_networks:
+            raise ValueError("portfolio_tokens accepts either `chains` or `networks`, not both.")
+
+        resolved: list[str] = []
+        seen: set[str] = set()
+
+        if has_networks:
+            for n in self.networks or []:
+                if not isinstance(n, str):
+                    continue
+                segment = n.strip().lower()
+                if not segment:
+                    continue
+                try:
+                    mercury_name = alchemy_network_to_mercury_chain(segment)
+                except UnknownAlchemyNetworkError as exc:
+                    raise ValueError(str(exc)) from exc
+                if mercury_name not in seen:
+                    resolved.append(mercury_name)
+                    seen.add(mercury_name)
+        elif has_chains:
+            for c in self.chains or []:
+                if not isinstance(c, str):
+                    continue
+                name = c.strip().lower()
+                if not name or name in seen:
+                    continue
+                resolved.append(name)
+                seen.add(name)
+        else:
+            fallback = self.chain
+            if not fallback or not str(fallback).strip():
+                raise ValueError(
+                    "portfolio_tokens requires `chains`, `networks`, or a default `chain` field."
+                )
+            resolved.append(str(fallback).strip().lower())
+
+        if not resolved:
+            raise ValueError("portfolio_tokens requires at least one chain or network.")
+        if len(resolved) > 5:
+            raise ValueError("portfolio_tokens supports at most 5 distinct networks per request.")
+
+        for name in resolved:
+            try:
+                get_chain_by_name(name)
+            except UnsupportedChainError as exc:
+                raise ValueError(f"Unsupported Mercury chain '{name}' for portfolio lookup.") from exc
+            try:
+                mercury_chain_to_alchemy_network(name)
+            except UnknownAlchemyNetworkError as exc:
+                raise ValueError(str(exc)) from exc
+
+        return self.model_copy(
+            update={
+                "chains": resolved,
+                "networks": None,
+                "chain": None,
+            }
+        )
+
+
 class UnsupportedIntent(BaseModel):
     """A non-executable intent with a user-safe reason."""
 
@@ -216,6 +311,7 @@ type ParsedIntent = (
     | ContractReadIntent
     | KnownAddressIntent
     | TokenPricesIntent
+    | PortfolioTokensIntent
     | UnsupportedIntent
 )
 
@@ -227,6 +323,7 @@ _INTENT_MODELS: dict[ReadOnlyIntentKind, type[BaseReadOnlyIntent]] = {
     ReadOnlyIntentKind.CONTRACT_READ: ContractReadIntent,
     ReadOnlyIntentKind.KNOWN_ADDRESS: KnownAddressIntent,
     ReadOnlyIntentKind.TOKEN_PRICES: TokenPricesIntent,
+    ReadOnlyIntentKind.PORTFOLIO_TOKENS: PortfolioTokensIntent,
 }
 
 _KIND_ALIASES = {
@@ -249,6 +346,8 @@ _KIND_ALIASES = {
     "lookup_known_address": ReadOnlyIntentKind.KNOWN_ADDRESS,
     "token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
     "get_token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
+    "portfolio_tokens": ReadOnlyIntentKind.PORTFOLIO_TOKENS,
+    "get_portfolio_tokens": ReadOnlyIntentKind.PORTFOLIO_TOKENS,
 }
 
 _VALUE_MOVING_WORDS = (

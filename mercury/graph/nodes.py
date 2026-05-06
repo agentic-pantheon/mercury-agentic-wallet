@@ -38,6 +38,8 @@ def resolve_chain(state: MercuryState) -> MercuryState:
     parsed_intent = state.get("parsed_intent", {})
     if parsed_intent.get("kind") == ReadOnlyIntentKind.TOKEN_PRICES.value:
         return _resolve_chain_for_token_prices(parsed_intent)
+    if parsed_intent.get("kind") == ReadOnlyIntentKind.PORTFOLIO_TOKENS.value:
+        return _resolve_chain_for_portfolio_tokens(parsed_intent)
 
     chain_name = parsed_intent.get("chain")
     if not isinstance(chain_name, str) or not chain_name:
@@ -93,6 +95,46 @@ def _resolve_chain_for_token_prices(parsed_intent: dict[str, Any]) -> MercurySta
             return {"error": normalize_exception(exc, stage="resolve_chain"), "chain_name": name}
 
     first = chain_names[0]
+    chain_config = get_chain_by_name(first)
+    return {
+        "chain_name": chain_config.name,
+        "chain_config": chain_config,
+        "chain_reference": chain_config.to_reference(),
+    }
+
+
+def _resolve_chain_for_portfolio_tokens(parsed_intent: dict[str, Any]) -> MercuryState:
+    """Validate Mercury chains and Alchemy portfolio API coverage."""
+
+    chains = parsed_intent.get("chains") or []
+    if not chains or not isinstance(chains, list):
+        exc = ValueError("portfolio_tokens intent is missing chains.")
+        return {"error": normalize_exception(exc, stage="resolve_chain")}
+
+    names: list[str] = []
+    for item in chains:
+        if isinstance(item, str) and item.strip():
+            names.append(item.strip().lower())
+
+    if not names:
+        exc = ValueError("portfolio_tokens chains must include at least one chain name.")
+        return {"error": normalize_exception(exc, stage="resolve_chain")}
+
+    distinct = sorted(set(names))
+    for name in distinct:
+        try:
+            get_chain_by_name(name)
+        except UnsupportedChainError as exc:
+            return {
+                "error": normalize_exception(exc, stage="resolve_chain"),
+                "chain_name": name,
+            }
+        try:
+            mercury_chain_to_alchemy_network(name)
+        except UnknownAlchemyNetworkError as exc:
+            return {"error": normalize_exception(exc, stage="resolve_chain"), "chain_name": name}
+
+    first = names[0]
     chain_config = get_chain_by_name(first)
     return {
         "chain_name": chain_config.name,
@@ -205,6 +247,20 @@ def _tool_input_for_state(state: MercuryState) -> dict[str, Any]:
     if intent_kind == ReadOnlyIntentKind.TOKEN_PRICES.value:
         tokens = parsed_intent.get("tokens") or []
         return {"tokens": tokens}
+    if intent_kind == ReadOnlyIntentKind.PORTFOLIO_TOKENS.value:
+        chains = parsed_intent.get("chains") or []
+        page_key = parsed_intent.get("page_key")
+        payload: dict[str, Any] = {
+            "wallet_address": parsed_intent["wallet_address"],
+            "chains": chains,
+            "with_metadata": bool(parsed_intent.get("with_metadata", True)),
+            "with_prices": bool(parsed_intent.get("with_prices", True)),
+            "include_native_tokens": bool(parsed_intent.get("include_native_tokens", True)),
+            "include_erc20_tokens": bool(parsed_intent.get("include_erc20_tokens", True)),
+        }
+        if isinstance(page_key, str) and page_key.strip():
+            payload["page_key"] = page_key.strip()
+        return payload
 
     msg = f"Unsupported read-only intent kind: {intent_kind}."
     raise ValueError(msg)

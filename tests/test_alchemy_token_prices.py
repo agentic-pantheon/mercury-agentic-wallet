@@ -62,8 +62,9 @@ def test_parse_token_prices_shorthand_chain_and_token_address() -> None:
 
 def test_readonly_registry_omits_prices_tool_without_alchemy_deps() -> None:
     factory = MagicMock()
-    reg = ReadOnlyToolRegistry.from_provider_factory(factory, alchemy_prices=None)
+    reg = ReadOnlyToolRegistry.from_provider_factory(factory, alchemy_prices=None, alchemy_portfolio=None)
     assert "get_token_prices" not in reg.names()
+    assert "get_portfolio_tokens" not in reg.names()
 
 
 def test_normalize_token_price_rows_handles_error_field() -> None:

@@ -6,6 +6,7 @@ from mercury.graph.router import (
     ROUTE_ERC20_BALANCE,
     ROUTE_ERC20_METADATA,
     ROUTE_NATIVE_BALANCE,
+    ROUTE_PORTFOLIO_TOKENS,
     ROUTE_RESOLVE_CHAIN,
     ROUTE_TOKEN_PRICES,
     ROUTE_UNSUPPORTED,
@@ -19,6 +20,19 @@ TOKEN = "0x000000000000000000000000000000000000cafE"
 OWNER = "0x0000000000000000000000000000000000000001"
 SPENDER = "0x0000000000000000000000000000000000000002"
 CONTRACT = "0x000000000000000000000000000000000000bEEF"
+
+
+def test_portfolio_tokens_intent_routes_to_portfolio_node() -> None:
+    state = _state_for(
+        {
+            "kind": "portfolio_tokens",
+            "wallet_address": WALLET,
+            "chain": "ethereum",
+        }
+    )
+
+    assert route_after_parse(state) == ROUTE_RESOLVE_CHAIN
+    assert route_read_tool(state) == ROUTE_PORTFOLIO_TOKENS
 
 
 def test_token_prices_intent_routes_to_token_prices_node() -> None:

@@ -9,6 +9,58 @@ WALLET = "0x000000000000000000000000000000000000dEaD"
 TOKEN = "0x000000000000000000000000000000000000cafE"
 
 
+def test_fake_portfolio_tokens_tool_formats_row_and_page_hint() -> None:
+    def get_portfolio_tokens(
+        wallet_address: str,
+        chains: list[str],
+        with_metadata: bool = True,
+        with_prices: bool = True,
+        include_native_tokens: bool = True,
+        include_erc20_tokens: bool = True,
+        page_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Fake portfolio snapshot for graph execution tests."""
+        assert wallet_address == WALLET
+        assert chains == ["ethereum"]
+        assert page_key is None
+        return {
+            "wallet_address": wallet_address,
+            "tokens": [
+                {
+                    "wallet_address": wallet_address,
+                    "network": "eth-mainnet",
+                    "mercury_chain": "ethereum",
+                    "token_address": None,
+                    "balance": "1",
+                    "metadata": {"decimals": 18, "logo": None, "name": "Ether", "symbol": "ETH"},
+                    "prices": [{"currency": "usd", "value": "2000", "lastUpdatedAt": None}],
+                    "error": None,
+                }
+            ],
+            "page_key": "more",
+        }
+
+    graph = build_graph(
+        ReadOnlyToolRegistry([StructuredTool.from_function(get_portfolio_tokens)])
+    ).compile()
+
+    result = graph.invoke(
+        {
+            "raw_input": {
+                "kind": "portfolio_tokens",
+                "wallet_address": WALLET,
+                "chain": "ethereum",
+            }
+        }
+    )
+
+    assert result["selected_tool_name"] == "get_portfolio_tokens"
+    text = result["response_text"].lower()
+    assert "2000 usd" in text
+    assert "next page" in text
+    assert "demo-api-key" not in text
+
+
 def test_fake_token_prices_tool_formats_mixed_success_and_error_rows() -> None:
     def get_token_prices(tokens: list[dict[str, Any]]) -> dict[str, Any]:
         """Fake Alchemy-normalized token price payload."""

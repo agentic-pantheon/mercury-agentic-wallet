@@ -25,7 +25,22 @@ def mercury_chain_to_alchemy_network(mercury_chain_name: str) -> str:
     except KeyError as exc:
         supported = ", ".join(sorted(_MERCURY_TO_ALCHEMY_NETWORK))
         msg = (
-            f"Alchemy token prices are not configured for chain '{mercury_chain_name}'. "
-            f"Supported chains for this API: {supported}."
+            f"Alchemy APIs are not configured for chain '{mercury_chain_name}'. "
+            f"Supported chains for these APIs: {supported}."
         )
         raise UnknownAlchemyNetworkError(msg) from exc
+
+
+def alchemy_network_to_mercury_chain(alchemy_network: str) -> str:
+    """Map an Alchemy REST `network` string back to a Mercury chain name."""
+
+    key = alchemy_network.strip().lower()
+    for mercury, alchemy_net in _MERCURY_TO_ALCHEMY_NETWORK.items():
+        if alchemy_net.lower() == key:
+            return mercury
+    supported_nets = ", ".join(sorted({v for v in _MERCURY_TO_ALCHEMY_NETWORK.values()}))
+    msg = (
+        f"Unsupported Alchemy network '{alchemy_network}'. "
+        f"Mercury maps the following portfolio/price networks: {supported_nets}."
+    )
+    raise UnknownAlchemyNetworkError(msg)

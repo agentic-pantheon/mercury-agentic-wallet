@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mercury.models.addresses import normalize_evm_address
 
+PORTFOLIO_MAX_CHAINS_PER_REQUEST = 5
+
 
 class ChainInput(BaseModel):
     """Base input requiring an explicit chain name."""
@@ -120,6 +122,54 @@ class TokenPricesToolInput(BaseModel):
             msg = "token_prices supports at most 3 distinct chains per request."
             raise ValueError(msg)
         return value
+
+
+class PortfolioTokensToolInput(BaseModel):
+    """Input for ``get_portfolio_tokens`` (one wallet, up to five Mercury chains)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    wallet_address: str = Field(min_length=1)
+    chains: list[str] = Field(min_length=1, max_length=PORTFOLIO_MAX_CHAINS_PER_REQUEST)
+    with_metadata: bool = True
+    with_prices: bool = True
+    include_native_tokens: bool = True
+    include_erc20_tokens: bool = True
+    page_key: str | None = None
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_wallet(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+    @field_validator("chains")
+    @classmethod
+    def normalize_chains(cls, value: list[str]) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for raw in value:
+            c = raw.strip().lower()
+            if not c or c in seen:
+                continue
+            out.append(c)
+            seen.add(c)
+        if not out:
+            raise ValueError("chains must include at least one non-empty chain name.")
+        if len(out) > PORTFOLIO_MAX_CHAINS_PER_REQUEST:
+            msg = (
+                f"portfolio_tokens supports at most {PORTFOLIO_MAX_CHAINS_PER_REQUEST} "
+                "distinct chains per request."
+            )
+            raise ValueError(msg)
+        return out
+
+    @field_validator("page_key")
+    @classmethod
+    def normalize_page_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class NativeBalanceOutput(BaseModel):

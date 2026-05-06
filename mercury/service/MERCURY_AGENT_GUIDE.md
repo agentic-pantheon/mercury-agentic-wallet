@@ -133,7 +133,7 @@ Top-level fields (unknown top-level keys are **rejected** with HTTP 422):
 
 ### Read-only (no signing)
 
-Examples: `native_balance`, `erc20_balance`, `erc20_allowance`, `erc20_metadata`, `contract_read`, `known_address`, `token_prices` (aliases: `get_token_prices`).
+Examples: `native_balance`, `erc20_balance`, `erc20_allowance`, `erc20_metadata`, `contract_read`, `known_address`, `token_prices` (aliases: `get_token_prices`), `portfolio_tokens` (aliases: `get_portfolio_tokens`).
 
 These do **not** require idempotency or approval in the same way as transfers.
 
@@ -238,6 +238,28 @@ Batch:
   }
 }
 ```
+
+---
+
+## Example: portfolio tokens by wallet (read-only, Alchemy)
+
+**`portfolio_tokens`** uses Alchemy’s **Portfolio API** (`tokens/by-address`) with the same 1Claw API key path as **`token_prices`** (`mercury/apis/alchemy`, overridable via `MERCURY_ALCHEMY_API_SECRET_PATH`). One wallet per request, up to **five** networks among `ethereum`, `base`, `arbitrum`, and `optimism`. Optional flags: `with_metadata`, `with_prices`, `include_native_tokens`, `include_erc20_tokens`. Use either Mercury `chains`, raw Alchemy `networks` (e.g. `eth-mainnet`), or a default `chain` when querying a single network.
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "intent": {
+    "kind": "portfolio_tokens",
+    "wallet_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "chains": ["ethereum", "base"],
+    "with_prices": true,
+    "with_metadata": true
+  }
+}
+```
+
+If the tool result includes `page_key`, pass it back as `page_key` on a follow-up intent to fetch the next page.
 
 ---
 
