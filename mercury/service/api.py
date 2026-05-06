@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, cast
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from mercury.chains import list_chains
 from mercury.config import MercurySettings
+from mercury.custody.errors import SecretNotFoundError
 from mercury.graph.runtime import GraphRuntime
 from mercury.graph.state import MercuryState
+from mercury.graph.webhook_graph import compiled_alchemy_webhook_graph
 from mercury.models.approval import ApprovalStatus
 from mercury.models.chain import ChainConfig
 from mercury.models.errors import MercuryErrorInfo
 from mercury.models.execution import ExecutionResult
-from mercury.service.dependencies import get_graph_runtime
-from mercury.service.errors import GraphInvocationError, install_exception_handlers
+from mercury.service.dependencies import get_graph_runtime, get_secret_store, get_service_settings
+from mercury.service.errors import (
+    DependencyUnavailableError,
+    GraphInvocationError,
+    install_exception_handlers,
+)
 from mercury.service.http_logging import MercuryHttpLoggingMiddleware
 from mercury.service.logging import (
     configure_service_logging,
@@ -35,8 +42,34 @@ from mercury.service.models import (
 )
 from mercury.service.pan_agentikit_handler import handle_agent_envelope
 from mercury.service.pan_agentikit_models import PanAgentEnvelope
+from mercury.webhooks.alchemy_dedupe import AlchemyWebhookDedupeStore
+from mercury.webhooks.alchemy_handler import merge_watched_addresses
+from mercury.webhooks.alchemy_verify import is_valid_signature_for_string_body
+from mercury.webhooks.keys import resolve_alchemy_webhook_signing_key
 
 _INVOKE_AGENT_GUIDE_PATH = Path(__file__).resolve().parent / "MERCURY_AGENT_GUIDE.md"
+
+
+def _alchemy_webhook_dedupe_store(app: FastAPI) -> AlchemyWebhookDedupeStore:
+    """Return a process-local dedupe store for Alchemy webhook retries."""
+
+    existing = getattr(app.state, "alchemy_webhook_dedupe", None)
+    if isinstance(existing, AlchemyWebhookDedupeStore):
+        return existing
+    store = AlchemyWebhookDedupeStore()
+    app.state.alchemy_webhook_dedupe = store
+    return store
+
+
+def _alchemy_webhook_compiled_graph(app: FastAPI):
+    """Lazily compile the webhook graph once per app, sharing a dedupe store."""
+
+    cached = getattr(app.state, "alchemy_webhook_graph", None)
+    if cached is not None:
+        return cached
+    compiled = compiled_alchemy_webhook_graph(_alchemy_webhook_dedupe_store(app))
+    app.state.alchemy_webhook_graph = compiled
+    return compiled
 
 
 def _invoke_agent_guide_body() -> str:
@@ -190,6 +223,77 @@ def create_app(
             error=response.error,
         )
         return response
+
+    @app.post("/v1/webhooks/alchemy/address-activity")
+    async def alchemy_address_activity_webhook(
+        request: Request,
+        settings: Annotated[MercurySettings, Depends(get_service_settings)],
+        watched_addresses: Annotated[
+            str | None,
+            Query(
+                description=(
+                    "Optional comma-separated 0x addresses. When set, only rows whose normalized "
+                    "toAddress is in this set are emitted. When omitted, every activity "
+                    "row is eligible."
+                ),
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
+        """Receive Alchemy Notify Address Activity webhooks (HMAC-verified raw body)."""
+
+        raw_body = await request.body()
+        signature = request.headers.get("X-Alchemy-Signature") or request.headers.get(
+            "x-alchemy-signature"
+        )
+        if not signature:
+            raise HTTPException(status_code=401, detail="Missing X-Alchemy-Signature header.")
+
+        overlay = getattr(request.app.state, "alchemy_webhook_signing_key", None)
+        secret_store = None
+        if not (isinstance(overlay, str) and overlay.strip()):
+            try:
+                secret_store = get_secret_store(settings)
+            except DependencyUnavailableError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Secret store is not configured; cannot verify webhook signature.",
+                ) from exc
+
+        try:
+            signing_key = resolve_alchemy_webhook_signing_key(
+                request=request,
+                settings=settings,
+                secret_store=secret_store,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Alchemy webhook signing key is not configured.",
+            ) from exc
+        except SecretNotFoundError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Alchemy webhook signing key secret is missing.",
+            ) from exc
+
+        if not is_valid_signature_for_string_body(raw_body, signature, signing_key):
+            raise HTTPException(status_code=403, detail="Invalid webhook signature.")
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=400, detail="Request body is not valid JSON.") from exc
+
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="JSON payload must be an object.")
+
+        watched = merge_watched_addresses(watched_addresses, payload)
+        graph = _alchemy_webhook_compiled_graph(request.app)
+        result = graph.invoke({"payload": payload, "watched_addresses": watched})
+        summary = result.get("emit_summary")
+        if not isinstance(summary, dict):
+            return {"received": True, "skipped": False, "processed": 0, "alerts": []}
+        return summary
 
     return app
 

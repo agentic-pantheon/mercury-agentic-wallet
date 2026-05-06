@@ -59,6 +59,13 @@ class MercurySettings(BaseSettings):
         default="mercury/apis/alchemy",
         description="1Claw secret path for the Alchemy API key (REST prices, portfolio, etc.).",
     )
+    alchemy_webhook_signing_key_secret_path: str = Field(
+        default="mercury/apis/alchemy_webhook_signing_key",
+        description=(
+            "1Claw secret path for the Alchemy Notify webhook signing key "
+            "(HMAC verification; distinct from the REST API key)."
+        ),
+    )
 
     oneclaw_base_url: str = Field(
         default="http://localhost:8080",

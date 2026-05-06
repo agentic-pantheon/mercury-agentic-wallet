@@ -14,8 +14,29 @@ This document focuses on **`POST /v1/mercury/invoke`**, the native JSON API for 
 | **This guide (Markdown)** | `GET /v1/mercury/invoke/guide` |
 | **Health** | `GET /healthz` |
 | **Readiness + supported chains** | `GET /readyz` |
+| **Alchemy Notify (Address Activity)** | `POST /v1/webhooks/alchemy/address-activity` |
 
 The OpenAPI document describes **request/response envelopes**. It does **not** enumerate every valid `intent` shape per `kind`; use the JSON patterns below together with `/openapi.json`.
+
+---
+
+## Alchemy Address Activity webhooks (push)
+
+Mercury exposes **`POST /v1/webhooks/alchemy/address-activity`** for [Alchemy Notify Address Activity](https://www.alchemy.com/docs/reference/address-activity-webhook) deliveries. This path is **separate** from `POST /v1/mercury/invoke`: it verifies **`X-Alchemy-Signature`** with **HMAC-SHA256** over the **raw** request body using the webhook signing key, then runs a **small dedicated LangGraph** (normalize → optional incoming filter → in-memory dedupe → structured log/response).
+
+**1Claw:** store the signing key at `MERCURY_ALCHEMY_WEBHOOK_SIGNING_KEY_SECRET_PATH` (default `mercury/apis/alchemy_webhook_signing_key`). This is **not** the same secret as the REST Alchemy API key (`mercury/apis/alchemy`).
+
+**Tests / local overrides:** you may set `app.state.alchemy_webhook_signing_key` to a raw string so the route can run without resolving the vault.
+
+**Watched addresses (optional):**
+
+- Query: `?watched_addresses=0xabc,0xdef` (comma-separated, case-normalized).
+- Or JSON extension (for clients you control): `metadata.watched_addresses` as a comma-separated string or JSON array of strings.
+
+If **no** watch list is provided, **every** normalized activity row is eligible (no `toAddress` filter). If a watch list **is** provided, only rows whose normalized **`toAddress`** is in that set are emitted.
+
+Duplicates across Alchemy retries are suppressed for about an hour using an in-process key
+`(webhook_id, event_id, tx_hash, log_index)` (see implementation).
 
 ---
 
