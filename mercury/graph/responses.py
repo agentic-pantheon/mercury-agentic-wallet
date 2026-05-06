@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from mercury.alchemy.portfolio import compute_portfolio_balance_display
 from mercury.graph.intents import ReadOnlyIntentKind
 from mercury.models.errors import MercuryErrorInfo
 
@@ -87,13 +88,17 @@ def _format_portfolio_tokens_response(tool_result: dict[str, Any]) -> str:
             continue
         chain_label = row.get("mercury_chain") or row.get("network", "")
         token_addr = row.get("token_address")
-        sym = None
-        meta = row.get("metadata")
-        if isinstance(meta, dict):
-            sym = meta.get("symbol")
+        meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else None
+        sym = meta.get("symbol") if meta else None
         label = sym if isinstance(sym, str) and sym else (token_addr or "native")
         err = row.get("error")
-        bal = row.get("balance", "")
+        bal_raw = row.get("balance", "")
+        token_for_decimals = token_addr if isinstance(token_addr, str) else None
+        bal = compute_portfolio_balance_display(
+            str(bal_raw) if bal_raw is not None else "",
+            token_address=token_for_decimals,
+            metadata=meta,
+        )
         if err:
             summaries.append(f"{label} on {chain_label}: error ({err})")
             continue

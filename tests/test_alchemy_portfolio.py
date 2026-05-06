@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from mercury.alchemy.portfolio import (
     AlchemyPortfolioClient,
     AlchemyPortfolioValidationError,
+    compute_portfolio_balance_display,
     normalize_portfolio_token_rows,
 )
 from mercury.custody.oneclaw import FakeSecretStore
@@ -94,14 +95,42 @@ def test_normalize_portfolio_rows_preserves_keys() -> None:
             "tokenBalance": "42",
             "error": "rpc hiccup",
         },
+        {
+            "address": WALLET,
+            "network": "base-mainnet",
+            "tokenAddress": "0x000000000000000000000000000000000000bAbE",
+            "tokenBalance": "0xde0b6b3a7640000",
+            "tokenMetadata": {"decimals": 18, "symbol": "TST", "name": "Test", "logo": None},
+            "error": None,
+        },
     ]
     out = normalize_portfolio_token_rows(raw, wallet_address=WALLET)
     assert out[0]["mercury_chain"] == "ethereum"
     assert out[0]["token_address"] is None
     assert out[0]["balance"] == "1000"
+    assert out[0]["balance_display"] == "0.000000000000001"
     assert out[0]["metadata"]["symbol"] == "ETH"
     assert out[1]["error"] == "rpc hiccup"
     assert out[1]["token_address"] == "0x000000000000000000000000000000000000cafE"
+    assert out[1]["balance_display"] == "42 (raw base units)"
+    assert out[2]["balance_display"] == "1"
+
+
+def test_compute_portfolio_balance_display_hex_native_defaults_18_decimals() -> None:
+    out = compute_portfolio_balance_display(
+        "0x00a255c5f73ef0e8",
+        token_address=None,
+        metadata=None,
+    )
+    assert out == "0.0456932549721418"
+
+
+def test_compute_portfolio_balance_display_invalid_returns_raw() -> None:
+    assert compute_portfolio_balance_display(
+        "not-a-number",
+        token_address=None,
+        metadata={"decimals": 18},
+    ) == "not-a-number"
 
 
 def test_client_posts_portfolio_payload_and_maps_page_key() -> None:

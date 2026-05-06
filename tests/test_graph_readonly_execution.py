@@ -58,6 +58,7 @@ def test_fake_portfolio_tokens_tool_formats_row_and_page_hint() -> None:
     text = result["response_text"].lower()
     assert "2000 usd" in text
     assert "next page" in text
+    assert "0.000000000000000001" in text
     assert "demo-api-key" not in text
 
 

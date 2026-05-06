@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 from mercury.alchemy.networks import (
@@ -30,6 +31,79 @@ def _coerce_error(err: Any) -> str | None:
     if isinstance(err, str):
         return err
     return str(err)
+
+
+def _parse_token_balance_int(balance_s: str) -> int | None:
+    s = balance_s.strip()
+    if not s:
+        return None
+    lowered = s.lower()
+    if lowered.startswith("0x"):
+        try:
+            return int(s, 16)
+        except ValueError:
+            return None
+    try:
+        return int(s, 10)
+    except ValueError:
+        return None
+
+
+def _coerce_meta_decimals(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if 0 <= value <= 256 else None
+    if isinstance(value, float) and value == int(value):
+        iv = int(value)
+        return iv if 0 <= iv <= 256 else None
+    if isinstance(value, str) and value.strip().isdigit():
+        iv = int(value.strip())
+        return iv if 0 <= iv <= 256 else None
+    return None
+
+
+def _resolved_decimals_for_display(
+    metadata: dict[str, Any] | None,
+    token_address: str | None,
+) -> int | None:
+    if isinstance(metadata, dict):
+        dec = _coerce_meta_decimals(metadata.get("decimals"))
+        if dec is not None:
+            return dec
+    if token_address is None:
+        return 18
+    return None
+
+
+def _format_units_to_display(raw_int: int, decimals: int) -> str:
+    if decimals < 0 or decimals > 256:
+        return str(raw_int)
+    scale = Decimal(10) ** decimals
+    d = Decimal(raw_int) / scale
+    if d == 0:
+        return "0"
+    s = format(d, "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s or "0"
+
+
+def compute_portfolio_balance_display(
+    balance_s: str,
+    *,
+    token_address: str | None,
+    metadata: dict[str, Any] | None,
+) -> str:
+    """Format ``tokenBalance`` (hex or decimal str) for humans using metadata decimals."""
+
+    parsed = _parse_token_balance_int(balance_s)
+    if parsed is None:
+        return balance_s
+    dec = _resolved_decimals_for_display(metadata, token_address)
+    if dec is None:
+        return f"{parsed} (raw base units)"
+    return _format_units_to_display(parsed, dec)
 
 
 def normalize_portfolio_token_rows(
@@ -123,6 +197,11 @@ def normalize_portfolio_token_rows(
                 "mercury_chain": mercury_chain,
                 "token_address": token_out,
                 "balance": balance_s,
+                "balance_display": compute_portfolio_balance_display(
+                    balance_s,
+                    token_address=token_out,
+                    metadata=meta_out,
+                ),
                 "metadata": meta_out,
                 "prices": prices_out,
                 "error": _coerce_error(row.get("error")),
