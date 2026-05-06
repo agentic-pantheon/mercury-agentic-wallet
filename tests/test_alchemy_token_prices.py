@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +14,8 @@ from mercury.alchemy.prices import (
     normalize_token_price_rows,
 )
 from mercury.custody.oneclaw import FakeSecretStore
+from mercury.graph.intents import TokenPricesIntent, parse_readonly_intent
+from mercury.tools.registry import ReadOnlyToolRegistry
 from mercury.tools.token_prices import AlchemyPricesToolDeps, create_alchemy_token_prices_tool, get_token_prices
 
 
@@ -41,6 +44,26 @@ class _FakeJsonHttp:
     ) -> dict[str, Any]:
         self.posts.append({"path": path, "payload": payload})
         return self.response
+
+
+def test_parse_token_prices_shorthand_chain_and_token_address() -> None:
+    parsed = parse_readonly_intent(
+        {
+            "kind": "token_prices",
+            "chain": "base",
+            "token_address": "0x000000000000000000000000000000000000cafE",
+        }
+    )
+    assert isinstance(parsed, TokenPricesIntent)
+    assert len(parsed.tokens) == 1
+    assert parsed.tokens[0].chain == "base"
+    assert parsed.tokens[0].token_address == "0x000000000000000000000000000000000000cafE"
+
+
+def test_readonly_registry_omits_prices_tool_without_alchemy_deps() -> None:
+    factory = MagicMock()
+    reg = ReadOnlyToolRegistry.from_provider_factory(factory, alchemy_prices=None)
+    assert "get_token_prices" not in reg.names()
 
 
 def test_normalize_token_price_rows_handles_error_field() -> None:
