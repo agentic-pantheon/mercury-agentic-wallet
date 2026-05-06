@@ -20,6 +20,36 @@ The OpenAPI document describes **request/response envelopes**. It does **not** e
 
 ---
 
+## Alchemy integration (overview)
+
+Mercury can call Alchemy **HTTP APIs** for read-only wallet intelligence and expose a **Notify webhook** for push events. These features use **two different secrets** in 1Claw (or test overrides):
+
+| Secret purpose | Default 1Claw path | Settings / env override |
+|----------------|--------------------|-------------------------|
+| **REST API key** (Prices, Portfolio, Transfers RPC) | `mercury/apis/alchemy` | `MERCURY_ALCHEMY_API_SECRET_PATH` |
+| **Webhook signing key** (HMAC on raw body) | `mercury/apis/alchemy_webhook_signing_key` | `MERCURY_ALCHEMY_WEBHOOK_SIGNING_KEY_SECRET_PATH` |
+
+**Registration:** `token_prices`, `portfolio_tokens`, and `transfer_history` are wired into the read-only graph only when **`MERCURY_ALCHEMY_API_SECRET_PATH`** is set to a **non-empty** path and the secret resolves. If that path is empty, those intents are unavailable (configure the key and restart).
+
+**Invoke intents (Alchemy-backed):**
+
+| `kind` | Use when | Chains (Mercury names) |
+|--------|----------|------------------------|
+| `token_prices` | Spot quotes for one or many contracts | `ethereum`, `base`, `arbitrum`, `optimism` |
+| `portfolio_tokens` | Full fungible snapshot for one wallet (metadata, optional prices, native + ERC-20) | Same (up to **5** networks per request) |
+| `transfer_history` | Paged asset transfer history via `alchemy_getAssetTransfers` | One chain per request; same set |
+
+**Choosing Alchemy vs on-chain reads:**
+
+- Prefer **`native_balance` / `erc20_balance`** when you need a single balance from Mercury’s RPC with no Alchemy dependency.
+- Prefer **`portfolio_tokens`** when you need **many tokens at once**, **labels/metadata**, or **Alchemy-quoted USD** in one call.
+- Prefer **`token_prices`** for **price-only** batches (up to 25 `(chain, token)` entries, 3 distinct chains).
+- Prefer **`transfer_history`** for **indexed transfer lists**; it does not replace a full node trace—mind Alchemy pagination TTL for `page_key`.
+
+Detailed JSON examples appear in the sections [Example: token prices](#example-token-prices-by-contract-read-only-alchemy), [Example: portfolio tokens](#example-portfolio-tokens-by-wallet-read-only-alchemy), and [Example: transfer history](#example-transfer-history-by-wallet-read-only-alchemy). Push delivery is documented in [Alchemy Address Activity webhooks](#alchemy-address-activity-webhooks-push).
+
+---
+
 ## Alchemy Address Activity webhooks (push)
 
 Mercury exposes **`POST /v1/webhooks/alchemy/address-activity`** for [Alchemy Notify Address Activity](https://www.alchemy.com/docs/reference/address-activity-webhook) deliveries. This path is **separate** from `POST /v1/mercury/invoke`: it verifies **`X-Alchemy-Signature`** with **HMAC-SHA256** over the **raw** request body using the webhook signing key, then runs a **small dedicated LangGraph** (normalize → optional incoming filter → in-memory dedupe → structured log/response).
@@ -268,6 +298,8 @@ Batch:
 
 **`portfolio_tokens`** uses Alchemy’s **Portfolio API** (`tokens/by-address`) with the same 1Claw API key path as **`token_prices`** (`mercury/apis/alchemy`, overridable via `MERCURY_ALCHEMY_API_SECRET_PATH`). One wallet per request, up to **five** networks among `ethereum`, `base`, `arbitrum`, and `optimism`. Optional flags: `with_metadata`, `with_prices`, `include_native_tokens`, `include_erc20_tokens`. Use either Mercury `chains`, raw Alchemy `networks` (e.g. `eth-mainnet`), or a default `chain` when querying a single network.
 
+**Structured `data` / tool rows:** each token entry includes **`balance`** (raw string from Alchemy, often **hex**) and **`balance_display`** (decimal **human** amount: `token_balance / 10**decimals`, using `tokenMetadata.decimals` when present, **18** for native when decimals are missing, or `"<integer> (raw base units)"` when decimals are unknown for an ERC-20). Agents building tables or summaries for users should prefer **`balance_display`** (and the invoke **`message`**, which uses the same formatting) instead of echoing hex.
+
 ```json
 {
   "user_id": "user-1",
@@ -454,6 +486,7 @@ Placing **`approval_response` only inside `intent`** does **not** wire into the 
 
 Success is **HTTP 200** with a **`MercuryInvokeResponse`**: `request_id`, `status`, `message`, optional `data`, `tx_hash`, `receipt`, `approval_required`, `approval_payload`, `error`.
 
+- **`message`** — human-oriented summary. For **`portfolio_tokens`**, token amounts in the summary are **decimal** (not raw hex); structured rows still carry **`balance`** and **`balance_display`** as described [above](#example-portfolio-tokens-by-wallet-read-only-alchemy).
 - **`approval_required` / `approval_denied`** — treat as “not signed yet”; retry with [`approval_response`](#approval-for-value-moving-transactions) when appropriate.
 - **`rejected`** / policy — e.g. missing idempotency key, simulation failure, policy rule.
 - **HTTP 422** — JSON failed Pydantic validation (wrong fields, extra top-level keys on `MercuryInvokeRequest`).
