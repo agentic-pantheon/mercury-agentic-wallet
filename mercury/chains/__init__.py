@@ -1,5 +1,6 @@
 """Supported chain registry exports."""
 
+from mercury.chains.ens_coin_type import evm_chain_id_to_ens_coin_type
 from mercury.chains.registry import (
     ARBITRUM,
     BASE,
@@ -19,6 +20,7 @@ __all__ = [
     "ARBITRUM",
     "BASE",
     "DEFAULT_CHAIN_NAME",
+    "evm_chain_id_to_ens_coin_type",
     "ETHEREUM",
     "MONAD",
     "OPTIMISM",
