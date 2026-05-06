@@ -61,6 +61,7 @@ from mercury.graph.router import (
     ROUTE_RESOLVE_NONCE,
     ROUTE_SIGN_TRANSACTION,
     ROUTE_SWAP_TYPED_ORDER_READY,
+    ROUTE_TOKEN_PRICES,
     ROUTE_UNSUPPORTED,
     route_after_chain,
     route_after_idempotency,
@@ -109,6 +110,10 @@ def build_graph(registry: ReadOnlyToolRegistry | None = None) -> StateGraph[Merc
         "resolve_known_address",
         cast(Any, make_read_tool_node("resolve_known_address", tool_registry)),
     )
+    builder.add_node(
+        "get_token_prices",
+        cast(Any, make_read_tool_node("get_token_prices", tool_registry)),
+    )
     builder.add_node("format_response", format_response)
 
     builder.add_edge(START, "parse_intent")
@@ -130,6 +135,7 @@ def build_graph(registry: ReadOnlyToolRegistry | None = None) -> StateGraph[Merc
             ROUTE_ERC20_METADATA: "get_erc20_metadata",
             ROUTE_CONTRACT_READ: "read_contract",
             ROUTE_RESOLVE_KNOWN_ADDRESS: "resolve_known_address",
+            ROUTE_TOKEN_PRICES: "get_token_prices",
             ROUTE_FORMAT_RESPONSE: "format_response",
         },
     )
@@ -139,6 +145,7 @@ def build_graph(registry: ReadOnlyToolRegistry | None = None) -> StateGraph[Merc
     builder.add_edge("get_erc20_metadata", "format_response")
     builder.add_edge("read_contract", "format_response")
     builder.add_edge("resolve_known_address", "format_response")
+    builder.add_edge("get_token_prices", "format_response")
     builder.add_edge("unsupported_response", END)
     builder.add_edge("format_response", END)
 

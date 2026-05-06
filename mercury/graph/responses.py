@@ -57,7 +57,43 @@ def format_success_response(
             f"on chain_id={tool_result['chain_id']} {tool_result['chain']} "
             f"resolves to {tool_result['address']}."
         )
+    if intent_kind == ReadOnlyIntentKind.TOKEN_PRICES.value:
+        return _format_token_prices_response(tool_result)
     return "Read-only request completed."
+
+
+def _format_token_prices_response(tool_result: dict[str, Any]) -> str:
+    tokens = tool_result.get("tokens")
+    if not isinstance(tokens, list) or not tokens:
+        return "Token prices: no results returned."
+
+    summaries: list[str] = []
+    for row in tokens:
+        if not isinstance(row, dict):
+            continue
+        address = row.get("address", "")
+        chain_label = row.get("mercury_chain") or row.get("network", "")
+        err = row.get("error")
+        prices = row.get("prices") if isinstance(row.get("prices"), list) else []
+        if err:
+            summaries.append(f"{address} on {chain_label}: error ({err})")
+            continue
+        if not prices:
+            summaries.append(f"{address} on {chain_label}: no quoted prices")
+            continue
+        bits: list[str] = []
+        for p in prices:
+            if not isinstance(p, dict):
+                continue
+            cur = p.get("currency", "")
+            val = p.get("value")
+            bits.append(f"{val} {cur}".strip())
+        price_text = ", ".join(bits) if bits else "no quoted prices"
+        summaries.append(f"{address} on {chain_label}: {price_text}")
+
+    if not summaries:
+        return "Token prices: no results returned."
+    return "Token prices — " + "; ".join(summaries) + "."
 
 
 def _error_text(error: str | MercuryErrorInfo) -> str:

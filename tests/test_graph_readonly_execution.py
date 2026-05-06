@@ -1,11 +1,58 @@
 from typing import Any
 
 from langchain_core.tools import StructuredTool
+
 from mercury.graph.agent import build_graph
 from mercury.tools.registry import ReadOnlyToolRegistry
 
 WALLET = "0x000000000000000000000000000000000000dEaD"
 TOKEN = "0x000000000000000000000000000000000000cafE"
+
+
+def test_fake_token_prices_tool_formats_mixed_success_and_error_rows() -> None:
+    def get_token_prices(tokens: list[dict[str, Any]]) -> dict[str, Any]:
+        """Fake Alchemy-normalized token price payload."""
+
+        assert len(tokens) == 2
+        return {
+            "tokens": [
+                {
+                    "network": "base-mainnet",
+                    "mercury_chain": "base",
+                    "address": TOKEN,
+                    "prices": [{"currency": "usd", "value": "1.0", "lastUpdatedAt": None}],
+                    "error": None,
+                },
+                {
+                    "network": "eth-mainnet",
+                    "mercury_chain": "ethereum",
+                    "address": WALLET,
+                    "prices": [],
+                    "error": "no liquidity",
+                },
+            ]
+        }
+
+    graph = build_graph(
+        ReadOnlyToolRegistry([StructuredTool.from_function(get_token_prices)])
+    ).compile()
+
+    result = graph.invoke(
+        {
+            "raw_input": {
+                "kind": "token_prices",
+                "tokens": [
+                    {"chain": "base", "token_address": TOKEN},
+                    {"chain": "ethereum", "token_address": WALLET},
+                ],
+            }
+        }
+    )
+
+    assert result["selected_tool_name"] == "get_token_prices"
+    text = result["response_text"].lower()
+    assert "1.0 usd" in text
+    assert "no liquidity" in text
 
 
 def test_fake_native_balance_tool_result_is_formatted() -> None:

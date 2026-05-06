@@ -79,6 +79,49 @@ class ContractReadInput(ChainInput):
         return normalize_evm_address(value)
 
 
+class TokenPriceRequestItem(BaseModel):
+    """One `(chain, token_address)` pair for Alchemy token price lookup."""
+
+    model_config = ConfigDict(frozen=True)
+
+    chain: str = Field(min_length=1)
+    token_address: str = Field(min_length=1)
+
+    @field_validator("chain")
+    @classmethod
+    def normalize_chain(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("chain must not be empty.")
+        return normalized
+
+    @field_validator("token_address")
+    @classmethod
+    def normalize_token_address(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+
+class TokenPricesToolInput(BaseModel):
+    """Batch input for ``get_token_prices``."""
+
+    model_config = ConfigDict(frozen=True)
+
+    tokens: list[TokenPriceRequestItem] = Field(min_length=1)
+
+    # Alchemy Prices: max 25 entries, max 3 distinct networks.
+    @field_validator("tokens")
+    @classmethod
+    def validate_batch_limits(cls, value: list[TokenPriceRequestItem]) -> list[TokenPriceRequestItem]:
+        if len(value) > 25:
+            msg = "token_prices supports at most 25 token entries per request."
+            raise ValueError(msg)
+        distinct_chains = {item.chain for item in value}
+        if len(distinct_chains) > 3:
+            msg = "token_prices supports at most 3 distinct chains per request."
+            raise ValueError(msg)
+        return value
+
+
 class NativeBalanceOutput(BaseModel):
     """Native balance read result."""
 

@@ -7,6 +7,7 @@ from mercury.graph.router import (
     ROUTE_ERC20_METADATA,
     ROUTE_NATIVE_BALANCE,
     ROUTE_RESOLVE_CHAIN,
+    ROUTE_TOKEN_PRICES,
     ROUTE_UNSUPPORTED,
     route_after_parse,
     route_read_tool,
@@ -18,6 +19,18 @@ TOKEN = "0x000000000000000000000000000000000000cafE"
 OWNER = "0x0000000000000000000000000000000000000001"
 SPENDER = "0x0000000000000000000000000000000000000002"
 CONTRACT = "0x000000000000000000000000000000000000bEEF"
+
+
+def test_token_prices_intent_routes_to_token_prices_node() -> None:
+    state = _state_for(
+        {
+            "kind": "token_prices",
+            "tokens": [{"chain": "base", "token_address": TOKEN}],
+        }
+    )
+
+    assert route_after_parse(state) == ROUTE_RESOLVE_CHAIN
+    assert route_read_tool(state) == ROUTE_TOKEN_PRICES
 
 
 def test_native_balance_intent_routes_to_native_balance_node() -> None:

@@ -133,7 +133,7 @@ Top-level fields (unknown top-level keys are **rejected** with HTTP 422):
 
 ### Read-only (no signing)
 
-Examples: `native_balance`, `erc20_balance`, `erc20_allowance`, `erc20_metadata`, `contract_read`, `known_address`.
+Examples: `native_balance`, `erc20_balance`, `erc20_allowance`, `erc20_metadata`, `contract_read`, `known_address`, `token_prices` (aliases: `get_token_prices`).
 
 These do **not** require idempotency or approval in the same way as transfers.
 
@@ -202,6 +202,42 @@ Use **`erc20_balance`** when you already have a checksummed contract address for
 ```
 
 Resolve symbol tickers (WBTC, USDC, …) via **`kind: known_address`** on the same chain **before** calling `erc20_balance`.
+
+---
+
+## Example: token prices by contract (read-only, Alchemy)
+
+**`token_prices`** calls Alchemy’s **Prices API** using the API key from the 1Claw path **`mercury/apis/alchemy`** (override via settings / `MERCURY_ALCHEMY_API_SECRET_PATH`). Up to **25** `(chain, token_address)` pairs and **3** distinct chains per request (`ethereum`, `base`, `arbitrum`, `optimism`).
+
+Single token:
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "intent": {
+    "kind": "token_prices",
+    "chain": "base",
+    "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  }
+}
+```
+
+Batch:
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "intent": {
+    "kind": "token_prices",
+    "tokens": [
+      { "chain": "base", "token_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+      { "chain": "ethereum", "token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" }
+    ]
+  }
+}
+```
 
 ---
 

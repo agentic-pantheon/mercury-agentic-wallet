@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Any, Literal, cast
 
 from langchain_core.messages import BaseMessage
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from mercury.models.addresses import normalize_evm_address
 
@@ -20,6 +20,7 @@ class ReadOnlyIntentKind(StrEnum):
     ERC20_METADATA = "erc20_metadata"
     CONTRACT_READ = "contract_read"
     KNOWN_ADDRESS = "known_address"
+    TOKEN_PRICES = "token_prices"
     UNSUPPORTED = "unsupported"
 
 
@@ -136,6 +137,68 @@ class KnownAddressIntent(BaseReadOnlyIntent):
         return stripped
 
 
+class TokenPriceIntentEntry(BaseModel):
+    """One token price lookup target."""
+
+    model_config = ConfigDict(frozen=True)
+
+    chain: str = Field(min_length=1)
+    token_address: str = Field(min_length=1)
+
+    @field_validator("chain")
+    @classmethod
+    def normalize_entry_chain(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("chain must not be empty.")
+        return normalized
+
+    @field_validator("token_address")
+    @classmethod
+    def normalize_entry_token_address(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+
+class TokenPricesIntent(BaseReadOnlyIntent):
+    """Fetch token prices by contract address via Alchemy (read-only)."""
+
+    kind: Literal[ReadOnlyIntentKind.TOKEN_PRICES] = ReadOnlyIntentKind.TOKEN_PRICES
+    token_address: str | None = None
+    tokens: list[TokenPriceIntentEntry] = Field(default_factory=list)
+
+    @field_validator("token_address")
+    @classmethod
+    def normalize_optional_token_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_evm_address(value)
+
+    @model_validator(mode="after")
+    def _normalize_token_list(self) -> TokenPricesIntent:
+        entries: list[TokenPriceIntentEntry]
+        if self.tokens:
+            entries = list(self.tokens)
+        elif self.token_address is not None:
+            chain = self.chain
+            if not chain:
+                raise ValueError(
+                    "token_prices requires `chain` when using `token_address` without `tokens`."
+                )
+            entries = [TokenPriceIntentEntry(chain=chain, token_address=self.token_address)]
+        else:
+            raise ValueError("token_prices requires `tokens` or `token_address` with `chain`.")
+
+        if not entries:
+            raise ValueError("token_prices requires at least one token entry.")
+        if len(entries) > 25:
+            raise ValueError("token_prices supports at most 25 token entries per request.")
+        distinct_chains = {e.chain for e in entries}
+        if len(distinct_chains) > 3:
+            raise ValueError("token_prices supports at most 3 distinct chains per request.")
+
+        return self.model_copy(update={"tokens": entries, "token_address": None, "chain": None})
+
+
 class UnsupportedIntent(BaseModel):
     """A non-executable intent with a user-safe reason."""
 
@@ -152,6 +215,7 @@ type ParsedIntent = (
     | ERC20MetadataIntent
     | ContractReadIntent
     | KnownAddressIntent
+    | TokenPricesIntent
     | UnsupportedIntent
 )
 
@@ -162,6 +226,7 @@ _INTENT_MODELS: dict[ReadOnlyIntentKind, type[BaseReadOnlyIntent]] = {
     ReadOnlyIntentKind.ERC20_METADATA: ERC20MetadataIntent,
     ReadOnlyIntentKind.CONTRACT_READ: ContractReadIntent,
     ReadOnlyIntentKind.KNOWN_ADDRESS: KnownAddressIntent,
+    ReadOnlyIntentKind.TOKEN_PRICES: TokenPricesIntent,
 }
 
 _KIND_ALIASES = {
@@ -182,6 +247,8 @@ _KIND_ALIASES = {
     "known_address": ReadOnlyIntentKind.KNOWN_ADDRESS,
     "address_lookup": ReadOnlyIntentKind.KNOWN_ADDRESS,
     "lookup_known_address": ReadOnlyIntentKind.KNOWN_ADDRESS,
+    "token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
+    "get_token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
 }
 
 _VALUE_MOVING_WORDS = (

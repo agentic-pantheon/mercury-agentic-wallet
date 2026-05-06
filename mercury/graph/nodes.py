@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
+from mercury.alchemy.networks import UnknownAlchemyNetworkError, mercury_chain_to_alchemy_network
 from mercury.chains import UnsupportedChainError, get_chain_by_name, get_default_chain
 from mercury.graph.intents import ReadOnlyIntentKind, UnsupportedIntentError, parse_readonly_intent
 from mercury.graph.responses import (
@@ -35,6 +36,9 @@ def resolve_chain(state: MercuryState) -> MercuryState:
     """Resolve the requested chain, defaulting to Ethereum."""
 
     parsed_intent = state.get("parsed_intent", {})
+    if parsed_intent.get("kind") == ReadOnlyIntentKind.TOKEN_PRICES.value:
+        return _resolve_chain_for_token_prices(parsed_intent)
+
     chain_name = parsed_intent.get("chain")
     if not isinstance(chain_name, str) or not chain_name:
         chain_name = get_default_chain().name
@@ -47,6 +51,49 @@ def resolve_chain(state: MercuryState) -> MercuryState:
             "chain_name": chain_name,
         }
 
+    return {
+        "chain_name": chain_config.name,
+        "chain_config": chain_config,
+        "chain_reference": chain_config.to_reference(),
+    }
+
+
+def _resolve_chain_for_token_prices(parsed_intent: dict[str, Any]) -> MercuryState:
+    """Validate Mercury chains and Alchemy price API coverage for each entry."""
+
+    tokens = parsed_intent.get("tokens") or []
+    if not tokens or not isinstance(tokens, list):
+        exc = ValueError("token_prices intent is missing tokens.")
+        return {"error": normalize_exception(exc, stage="resolve_chain")}
+
+    chain_names: list[str] = []
+    for entry in tokens:
+        if not isinstance(entry, dict):
+            continue
+        c = entry.get("chain")
+        if isinstance(c, str) and c.strip():
+            chain_names.append(c.strip().lower())
+
+    if not chain_names:
+        exc = ValueError("token_prices tokens must include a chain per entry.")
+        return {"error": normalize_exception(exc, stage="resolve_chain")}
+
+    distinct = sorted(set(chain_names))
+    for name in distinct:
+        try:
+            get_chain_by_name(name)
+        except UnsupportedChainError as exc:
+            return {
+                "error": normalize_exception(exc, stage="resolve_chain"),
+                "chain_name": name,
+            }
+        try:
+            mercury_chain_to_alchemy_network(name)
+        except UnknownAlchemyNetworkError as exc:
+            return {"error": normalize_exception(exc, stage="resolve_chain"), "chain_name": name}
+
+    first = chain_names[0]
+    chain_config = get_chain_by_name(first)
     return {
         "chain_name": chain_config.name,
         "chain_config": chain_config,
@@ -155,6 +202,9 @@ def _tool_input_for_state(state: MercuryState) -> dict[str, Any]:
             "category": parsed_intent["category"],
             "key": parsed_intent["key"],
         }
+    if intent_kind == ReadOnlyIntentKind.TOKEN_PRICES.value:
+        tokens = parsed_intent.get("tokens") or []
+        return {"tokens": tokens}
 
     msg = f"Unsupported read-only intent kind: {intent_kind}."
     raise ValueError(msg)
