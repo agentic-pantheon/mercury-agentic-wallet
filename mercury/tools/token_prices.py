@@ -52,6 +52,7 @@ def create_alchemy_token_prices_tool(
         name="get_token_prices",
         description=(
             "Fetch current token prices from Alchemy Prices API by (chain, token contract). "
-            "Supports up to 25 entries and 3 distinct networks (ethereum, base, arbitrum, optimism)."
+            "Supports up to 25 entries and 3 distinct networks "
+            "(ethereum, base, arbitrum, optimism)."
         ),
     )

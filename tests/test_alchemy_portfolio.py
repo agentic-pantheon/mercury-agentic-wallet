@@ -56,7 +56,11 @@ WALLET = "0x000000000000000000000000000000000000dEaD"
 
 def test_readonly_registry_omits_portfolio_tool_without_alchemy_deps() -> None:
     factory = MagicMock()
-    reg = ReadOnlyToolRegistry.from_provider_factory(factory, alchemy_prices=None, alchemy_portfolio=None)
+    reg = ReadOnlyToolRegistry.from_provider_factory(
+        factory,
+        alchemy_prices=None,
+        alchemy_portfolio=None,
+    )
     assert "get_portfolio_tokens" not in reg.names()
 
 
@@ -151,7 +155,11 @@ def test_client_passes_page_key_through() -> None:
 
 def test_client_rejects_more_than_five_network_entries() -> None:
     store = FakeSecretStore({"k": "fake-key"})
-    client = AlchemyPortfolioClient(secret_store=store, api_key_secret_path="k", http=_FakeJsonHttp({}))
+    client = AlchemyPortfolioClient(
+        secret_store=store,
+        api_key_secret_path="k",
+        http=_FakeJsonHttp({}),
+    )
     with pytest.raises(AlchemyPortfolioValidationError, match="5"):
         client.fetch_tokens_for_wallet(
             wallet_address=WALLET,

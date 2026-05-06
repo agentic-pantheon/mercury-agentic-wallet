@@ -61,6 +61,8 @@ def format_success_response(
         return _format_token_prices_response(tool_result)
     if intent_kind == ReadOnlyIntentKind.PORTFOLIO_TOKENS.value:
         return _format_portfolio_tokens_response(tool_result)
+    if intent_kind == ReadOnlyIntentKind.TRANSFER_HISTORY.value:
+        return _format_transfer_history_response(tool_result)
     return "Read-only request completed."
 
 
@@ -70,7 +72,11 @@ def _format_portfolio_tokens_response(tool_result: dict[str, Any]) -> str:
     page_key = tool_result.get("page_key")
 
     if not isinstance(tokens, list) or not tokens:
-        base = f"Portfolio for {wallet}: no tokens returned." if wallet else "Portfolio: no tokens returned."
+        base = (
+            f"Portfolio for {wallet}: no tokens returned."
+            if wallet
+            else "Portfolio: no tokens returned."
+        )
         if isinstance(page_key, str) and page_key.strip():
             return f"{base} (more pages available; pass page_key for next request.)"
         return base
@@ -109,6 +115,42 @@ def _format_portfolio_tokens_response(tool_result: dict[str, Any]) -> str:
 
     if isinstance(page_key, str) and page_key.strip():
         msg += " (next page: include page_key in the intent.)"
+    return msg
+
+
+def _format_transfer_history_response(tool_result: dict[str, Any]) -> str:
+    wallet = tool_result.get("wallet_address", "")
+    chain_label = tool_result.get("mercury_chain") or tool_result.get("network", "")
+    transfers = tool_result.get("transfers")
+    page_key = tool_result.get("page_key")
+
+    if not isinstance(transfers, list) or not transfers:
+        base = (
+            f"Transfer history for {wallet} on {chain_label}: no transfers returned."
+            if wallet
+            else f"Transfer history on {chain_label}: no transfers returned."
+        )
+        if isinstance(page_key, str) and page_key.strip():
+            return f"{base} (more pages available; pass page_key within Alchemy TTL.)"
+        return base
+
+    bits: list[str] = []
+    for row in transfers[:12]:
+        if not isinstance(row, dict):
+            continue
+        h = row.get("hash", "")
+        cat = row.get("category", "")
+        bn = row.get("block_num", "")
+        bits.append(f"block {bn} {cat} {h}".strip())
+
+    msg = f"Transfer history for {wallet} on {chain_label} — " + "; ".join(bits) + "."
+    if len(transfers) > 12:
+        msg += f" ({len(transfers)} transfers returned; showing first 12.)"
+    if isinstance(page_key, str) and page_key.strip():
+        msg += (
+            " Next page: include page_key in the intent "
+            "(incoming/outgoing only; expires ~10 minutes per Alchemy)."
+        )
     return msg
 
 

@@ -56,6 +56,8 @@ Mercury resolves **dot-separated ENS names** into checksummed ``0x`` addresses *
 
 - ``native_balance.wallet_address``
 - ``erc20_balance.wallet_address``
+- ``portfolio_tokens.wallet_address``
+- ``transfer_history.wallet_address``
 - ``erc20_allowance.owner_address``, ``erc20_allowance.spender_address``
 - ``contract_read.contract_address``
 - ``native_transfer.recipient_address``
@@ -133,7 +135,7 @@ Top-level fields (unknown top-level keys are **rejected** with HTTP 422):
 
 ### Read-only (no signing)
 
-Examples: `native_balance`, `erc20_balance`, `erc20_allowance`, `erc20_metadata`, `contract_read`, `known_address`, `token_prices` (aliases: `get_token_prices`), `portfolio_tokens` (aliases: `get_portfolio_tokens`).
+Examples: `native_balance`, `erc20_balance`, `erc20_allowance`, `erc20_metadata`, `contract_read`, `known_address`, `token_prices` (aliases: `get_token_prices`), `portfolio_tokens` (aliases: `get_portfolio_tokens`), `transfer_history` (aliases: `get_transfer_history`).
 
 These do **not** require idempotency or approval in the same way as transfers.
 
@@ -260,6 +262,28 @@ Batch:
 ```
 
 If the tool result includes `page_key`, pass it back as `page_key` on a follow-up intent to fetch the next page.
+
+---
+
+## Example: transfer history by wallet (read-only, Alchemy)
+
+**`transfer_history`** calls Alchemy’s **Transfers API** (`alchemy_getAssetTransfers` JSON-RPC) on the chain’s Alchemy node URL, using the same 1Claw API key path as **`token_prices`** (`mercury/apis/alchemy`, overridable via `MERCURY_ALCHEMY_API_SECRET_PATH`). One **Mercury `chain`** and one **`wallet_address`** per request (`ethereum`, `base`, `arbitrum`, `optimism`). Optional: `direction` (`incoming`, `outgoing`, or `both`; aliases `in` / `out`), `categories` (defaults to `external`, `internal`, `erc20`, `erc721`, `erc1155`), `from_block`, `to_block`, `max_count` (1–1000, default 100), `page_key`, `with_metadata`, `exclude_zero_value`.
+
+When **`direction` is `both`**, Mercury issues separate incoming and outgoing queries and merges the first page (deduped by transaction hash); **`page_key` pagination is not used**—use **`incoming`** or **`outgoing`** if you need to page (echo `page_key` within Alchemy’s short TTL, often around ten minutes).
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "intent": {
+    "kind": "transfer_history",
+    "chain": "base",
+    "wallet_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "direction": "incoming",
+    "max_count": 25
+  }
+}
+```
 
 ---
 

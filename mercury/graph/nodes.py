@@ -40,6 +40,8 @@ def resolve_chain(state: MercuryState) -> MercuryState:
         return _resolve_chain_for_token_prices(parsed_intent)
     if parsed_intent.get("kind") == ReadOnlyIntentKind.PORTFOLIO_TOKENS.value:
         return _resolve_chain_for_portfolio_tokens(parsed_intent)
+    if parsed_intent.get("kind") == ReadOnlyIntentKind.TRANSFER_HISTORY.value:
+        return _resolve_chain_for_transfer_history(parsed_intent)
 
     chain_name = parsed_intent.get("chain")
     if not isinstance(chain_name, str) or not chain_name:
@@ -96,6 +98,35 @@ def _resolve_chain_for_token_prices(parsed_intent: dict[str, Any]) -> MercurySta
 
     first = chain_names[0]
     chain_config = get_chain_by_name(first)
+    return {
+        "chain_name": chain_config.name,
+        "chain_config": chain_config,
+        "chain_reference": chain_config.to_reference(),
+    }
+
+
+def _resolve_chain_for_transfer_history(parsed_intent: dict[str, Any]) -> MercuryState:
+    """Validate Mercury chain and Alchemy RPC/transfers coverage."""
+
+    chain_name = parsed_intent.get("chain")
+    if not isinstance(chain_name, str) or not chain_name.strip():
+        chain_name = get_default_chain().name
+    else:
+        chain_name = chain_name.strip().lower()
+
+    try:
+        chain_config = get_chain_by_name(chain_name)
+    except UnsupportedChainError as exc:
+        return {
+            "error": normalize_exception(exc, stage="resolve_chain"),
+            "chain_name": chain_name,
+        }
+
+    try:
+        mercury_chain_to_alchemy_network(chain_name)
+    except UnknownAlchemyNetworkError as exc:
+        return {"error": normalize_exception(exc, stage="resolve_chain"), "chain_name": chain_name}
+
     return {
         "chain_name": chain_config.name,
         "chain_config": chain_config,
@@ -261,6 +292,23 @@ def _tool_input_for_state(state: MercuryState) -> dict[str, Any]:
         if isinstance(page_key, str) and page_key.strip():
             payload["page_key"] = page_key.strip()
         return payload
+    if intent_kind == ReadOnlyIntentKind.TRANSFER_HISTORY.value:
+        cats = parsed_intent.get("categories")
+        out: dict[str, Any] = {
+            "chain": chain_name,
+            "wallet_address": parsed_intent["wallet_address"],
+            "direction": parsed_intent["direction"],
+            "categories": cats,
+            "from_block": parsed_intent.get("from_block"),
+            "to_block": parsed_intent.get("to_block"),
+            "max_count": parsed_intent.get("max_count"),
+            "with_metadata": bool(parsed_intent.get("with_metadata", True)),
+            "exclude_zero_value": bool(parsed_intent.get("exclude_zero_value", True)),
+        }
+        pk_th = parsed_intent.get("page_key")
+        if isinstance(pk_th, str) and pk_th.strip():
+            out["page_key"] = pk_th.strip()
+        return out
 
     msg = f"Unsupported read-only intent kind: {intent_kind}."
     raise ValueError(msg)

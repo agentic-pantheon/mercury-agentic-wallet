@@ -16,7 +16,11 @@ from mercury.alchemy.prices import (
 from mercury.custody.oneclaw import FakeSecretStore
 from mercury.graph.intents import TokenPricesIntent, parse_readonly_intent
 from mercury.tools.registry import ReadOnlyToolRegistry
-from mercury.tools.token_prices import AlchemyPricesToolDeps, create_alchemy_token_prices_tool, get_token_prices
+from mercury.tools.token_prices import (
+    AlchemyPricesToolDeps,
+    create_alchemy_token_prices_tool,
+    get_token_prices,
+)
 
 
 class _FakeJsonHttp:
@@ -62,7 +66,11 @@ def test_parse_token_prices_shorthand_chain_and_token_address() -> None:
 
 def test_readonly_registry_omits_prices_tool_without_alchemy_deps() -> None:
     factory = MagicMock()
-    reg = ReadOnlyToolRegistry.from_provider_factory(factory, alchemy_prices=None, alchemy_portfolio=None)
+    reg = ReadOnlyToolRegistry.from_provider_factory(
+        factory,
+        alchemy_prices=None,
+        alchemy_portfolio=None,
+    )
     assert "get_token_prices" not in reg.names()
     assert "get_portfolio_tokens" not in reg.names()
 
@@ -85,7 +93,11 @@ def test_normalize_token_price_rows_handles_error_field() -> None:
 
 def test_client_rejects_more_than_25_entries() -> None:
     store = FakeSecretStore({"k": "fake-key"})
-    client = AlchemyTokenPricesClient(secret_store=store, api_key_secret_path="k", http=_FakeJsonHttp({}))
+    client = AlchemyTokenPricesClient(
+        secret_store=store,
+        api_key_secret_path="k",
+        http=_FakeJsonHttp({}),
+    )
     entries = [("ethereum", "0x0000000000000000000000000000000000000001")] * 26
     with pytest.raises(AlchemyTokenPricesValidationError, match="25"):
         client.fetch_prices_by_address(entries)
@@ -93,7 +105,11 @@ def test_client_rejects_more_than_25_entries() -> None:
 
 def test_client_rejects_more_than_three_networks() -> None:
     store = FakeSecretStore({"k": "fake-key"})
-    client = AlchemyTokenPricesClient(secret_store=store, api_key_secret_path="k", http=_FakeJsonHttp({}))
+    client = AlchemyTokenPricesClient(
+        secret_store=store,
+        api_key_secret_path="k",
+        http=_FakeJsonHttp({}),
+    )
     entries = [
         ("ethereum", "0x0000000000000000000000000000000000000001"),
         ("base", "0x0000000000000000000000000000000000000002"),
@@ -126,7 +142,9 @@ def test_client_posts_normalized_addresses_and_maps_response() -> None:
     assert len(http.posts) == 1
     assert http.posts[0]["path"] == "prices/v1/demo-api-key/tokens/by-address"
     addrs = http.posts[0]["payload"]["addresses"]
-    assert addrs == [{"network": "base-mainnet", "address": "0x000000000000000000000000000000000000cafE"}]
+    assert addrs == [
+        {"network": "base-mainnet", "address": "0x000000000000000000000000000000000000cafE"}
+    ]
     assert out["tokens"][0]["prices"][0]["value"] == "1"
     assert out["tokens"][0]["mercury_chain"] == "base"
 
@@ -155,13 +173,17 @@ def test_get_token_prices_tool_accepts_list_of_dicts() -> None:
     )
     raw = tool.invoke(
         {
-            "tokens": [{"chain": "base", "token_address": "0x000000000000000000000000000000000000cafE"}],
+            "tokens": [
+                {"chain": "base", "token_address": "0x000000000000000000000000000000000000cafE"}
+            ],
         }
     )
     assert raw["tokens"][0]["mercury_chain"] == "base"
 
 
 def test_get_token_prices_helper_validates_batch() -> None:
-    many = [{"chain": "ethereum", "token_address": "0x0000000000000000000000000000000000000001"}] * 26
+    many = [
+        {"chain": "ethereum", "token_address": "0x0000000000000000000000000000000000000001"}
+    ] * 26
     with pytest.raises(ValidationError, match="25"):
         get_token_prices(tokens=many, client=_StubPricesClient())

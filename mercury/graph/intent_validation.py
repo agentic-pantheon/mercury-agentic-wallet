@@ -54,6 +54,8 @@ _ENS_RESOLVABLE_FIELDS_BY_KIND: dict[str, tuple[str, ...]] = {
     "native_balance": ("wallet_address",),
     "portfolio_tokens": ("wallet_address",),
     "get_portfolio_tokens": ("wallet_address",),
+    "transfer_history": ("wallet_address",),
+    "get_transfer_history": ("wallet_address",),
     "erc20_balance": ("wallet_address",),
     "erc20_allowance": ("owner_address", "spender_address"),
     "contract_read": ("contract_address",),

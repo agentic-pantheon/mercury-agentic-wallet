@@ -61,6 +61,69 @@ def test_fake_portfolio_tokens_tool_formats_row_and_page_hint() -> None:
     assert "demo-api-key" not in text
 
 
+def test_fake_transfer_history_tool_formats_summary_and_page_hint() -> None:
+    def get_transfer_history(
+        chain: str,
+        wallet_address: str,
+        direction: str = "both",
+        categories: list[str] | None = None,
+        from_block: str | int | None = None,
+        to_block: str | int | None = None,
+        max_count: int = 100,
+        page_key: str | None = None,
+        with_metadata: bool = True,
+        exclude_zero_value: bool = True,
+    ) -> dict[str, Any]:
+        """Fake transfer history rows for graph execution tests."""
+        assert chain == "ethereum"
+        assert wallet_address == WALLET
+        assert direction == "incoming"
+        assert page_key == "cont"
+        return {
+            "wallet_address": wallet_address,
+            "mercury_chain": "ethereum",
+            "network": "eth-mainnet",
+            "transfers": [
+                {
+                    "hash": "0xaa",
+                    "block_num": 10,
+                    "category": "erc20",
+                    "from_address": "0x0000000000000000000000000000000000000001",
+                    "to_address": wallet_address,
+                    "asset": "USDC",
+                    "value": None,
+                    "raw_contract": None,
+                    "metadata": None,
+                    "network": "eth-mainnet",
+                    "mercury_chain": "ethereum",
+                }
+            ],
+            "page_key": "more",
+        }
+
+    graph = build_graph(
+        ReadOnlyToolRegistry([StructuredTool.from_function(get_transfer_history)])
+    ).compile()
+
+    result = graph.invoke(
+        {
+            "raw_input": {
+                "kind": "transfer_history",
+                "wallet_address": WALLET,
+                "chain": "ethereum",
+                "direction": "incoming",
+                "page_key": "cont",
+            }
+        }
+    )
+
+    assert result["selected_tool_name"] == "get_transfer_history"
+    text = result["response_text"].lower()
+    assert "erc20" in text
+    assert "next page" in text or "page_key" in text
+    assert "demo-api-key" not in text
+
+
 def test_fake_token_prices_tool_formats_mixed_success_and_error_rows() -> None:
     def get_token_prices(tokens: list[dict[str, Any]]) -> dict[str, Any]:
         """Fake Alchemy-normalized token price payload."""

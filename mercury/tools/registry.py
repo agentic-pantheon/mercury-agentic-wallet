@@ -23,12 +23,23 @@ class ReadOnlyToolRegistry:
         *,
         alchemy_prices: Any | None = None,
         alchemy_portfolio: Any | None = None,
+        alchemy_transfers: Any | None = None,
     ) -> ReadOnlyToolRegistry:
         """Create a registry bound to a provider factory and optional Alchemy HTTP tools."""
 
         from mercury.tools import create_readonly_tools
-        from mercury.tools.portfolio_tokens import AlchemyPortfolioToolDeps, create_alchemy_portfolio_tokens_tool
-        from mercury.tools.token_prices import AlchemyPricesToolDeps, create_alchemy_token_prices_tool
+        from mercury.tools.portfolio_tokens import (
+            AlchemyPortfolioToolDeps,
+            create_alchemy_portfolio_tokens_tool,
+        )
+        from mercury.tools.token_prices import (
+            AlchemyPricesToolDeps,
+            create_alchemy_token_prices_tool,
+        )
+        from mercury.tools.transfer_history import (
+            AlchemyTransfersToolDeps,
+            create_alchemy_transfer_history_tool,
+        )
 
         tools = list(create_readonly_tools(provider_factory))
         if alchemy_prices is not None:
@@ -41,6 +52,11 @@ class ReadOnlyToolRegistry:
                 msg = "alchemy_portfolio must be AlchemyPortfolioToolDeps when provided."
                 raise TypeError(msg)
             tools.append(create_alchemy_portfolio_tokens_tool(alchemy_portfolio))
+        if alchemy_transfers is not None:
+            if not isinstance(alchemy_transfers, AlchemyTransfersToolDeps):
+                msg = "alchemy_transfers must be AlchemyTransfersToolDeps when provided."
+                raise TypeError(msg)
+            tools.append(create_alchemy_transfer_history_tool(alchemy_transfers))
         return cls(tools)
 
     def execute(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:

@@ -71,7 +71,12 @@ def normalize_portfolio_token_rows(
             token_out = None
 
         balance_raw = row.get("tokenBalance")
-        balance_s = balance_raw if isinstance(balance_raw, str) else str(balance_raw) if balance_raw is not None else ""
+        if isinstance(balance_raw, str):
+            balance_s = balance_raw
+        elif balance_raw is not None:
+            balance_s = str(balance_raw)
+        else:
+            balance_s = ""
 
         meta_out: dict[str, Any] | None = None
         meta_raw = row.get("tokenMetadata")

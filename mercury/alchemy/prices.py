@@ -40,7 +40,11 @@ def _validate_batch(entries: list[tuple[str, str]]) -> None:
         raise AlchemyTokenPricesValidationError(msg)
 
 
-def normalize_token_price_rows(raw: Any, *, mercury_chain_by_network: dict[str, str]) -> list[dict[str, Any]]:
+def normalize_token_price_rows(
+    raw: Any,
+    *,
+    mercury_chain_by_network: dict[str, str],
+) -> list[dict[str, Any]]:
     """Normalize Alchemy `data` array items into stable dicts."""
 
     if not isinstance(raw, list):

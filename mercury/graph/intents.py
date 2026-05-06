@@ -8,7 +8,12 @@ from typing import Any, Literal, cast
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from mercury.alchemy.networks import UnknownAlchemyNetworkError, alchemy_network_to_mercury_chain, mercury_chain_to_alchemy_network
+from mercury.alchemy.networks import (
+    UnknownAlchemyNetworkError,
+    alchemy_network_to_mercury_chain,
+    mercury_chain_to_alchemy_network,
+)
+from mercury.alchemy.transfers import ALLOWED_TRANSFER_CATEGORIES, TRANSFER_DEFAULT_CATEGORIES
 from mercury.chains import UnsupportedChainError, get_chain_by_name
 from mercury.models.addresses import normalize_evm_address
 
@@ -24,6 +29,7 @@ class ReadOnlyIntentKind(StrEnum):
     KNOWN_ADDRESS = "known_address"
     TOKEN_PRICES = "token_prices"
     PORTFOLIO_TOKENS = "portfolio_tokens"
+    TRANSFER_HISTORY = "transfer_history"
     UNSUPPORTED = "unsupported"
 
 
@@ -279,7 +285,8 @@ class PortfolioTokensIntent(BaseReadOnlyIntent):
             try:
                 get_chain_by_name(name)
             except UnsupportedChainError as exc:
-                raise ValueError(f"Unsupported Mercury chain '{name}' for portfolio lookup.") from exc
+                msg = f"Unsupported Mercury chain '{name}' for portfolio lookup."
+                raise ValueError(msg) from exc
             try:
                 mercury_chain_to_alchemy_network(name)
             except UnknownAlchemyNetworkError as exc:
@@ -290,6 +297,77 @@ class PortfolioTokensIntent(BaseReadOnlyIntent):
                 "chains": resolved,
                 "networks": None,
                 "chain": None,
+            }
+        )
+
+
+class TransferHistoryIntent(BaseReadOnlyIntent):
+    """Historical asset transfers for one wallet via Alchemy ``alchemy_getAssetTransfers``."""
+
+    kind: Literal[ReadOnlyIntentKind.TRANSFER_HISTORY] = ReadOnlyIntentKind.TRANSFER_HISTORY
+    wallet_address: str = Field(min_length=1)
+    direction: str = "both"
+    categories: list[str] | None = None
+    from_block: str | int | None = None
+    to_block: str | int | None = None
+    max_count: int | None = None
+    page_key: str | None = None
+    with_metadata: bool = True
+    exclude_zero_value: bool = True
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_transfer_wallet(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+    @field_validator("page_key")
+    @classmethod
+    def normalize_transfer_page_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def _normalize_transfer_fields(self) -> TransferHistoryIntent:
+        aliases = {
+            "in": "incoming",
+            "incoming": "incoming",
+            "out": "outgoing",
+            "outgoing": "outgoing",
+            "both": "both",
+        }
+        key = self.direction.strip().lower()
+        if key not in aliases:
+            raise ValueError("direction must be incoming, outgoing, or both.")
+        dir_norm = aliases[key]
+
+        cats = self.categories
+        if not cats:
+            resolved = list(TRANSFER_DEFAULT_CATEGORIES)
+        else:
+            resolved = [c.strip().lower() for c in cats if isinstance(c, str) and c.strip()]
+            if not resolved:
+                raise ValueError("categories must include at least one non-empty category name.")
+            for c in resolved:
+                if c not in ALLOWED_TRANSFER_CATEGORIES:
+                    allowed = ", ".join(sorted(ALLOWED_TRANSFER_CATEGORIES))
+                    raise ValueError(f"Unsupported transfer category {c!r}. Allowed: {allowed}.")
+
+        mc = self.max_count
+        if mc is None:
+            mc = 100
+        if mc < 1 or mc > 1000:
+            raise ValueError("max_count must be between 1 and 1000 inclusive.")
+
+        page_key = None if dir_norm == "both" else self.page_key
+
+        return self.model_copy(
+            update={
+                "direction": dir_norm,
+                "categories": resolved,
+                "max_count": mc,
+                "page_key": page_key,
             }
         )
 
@@ -312,6 +390,7 @@ type ParsedIntent = (
     | KnownAddressIntent
     | TokenPricesIntent
     | PortfolioTokensIntent
+    | TransferHistoryIntent
     | UnsupportedIntent
 )
 
@@ -324,6 +403,7 @@ _INTENT_MODELS: dict[ReadOnlyIntentKind, type[BaseReadOnlyIntent]] = {
     ReadOnlyIntentKind.KNOWN_ADDRESS: KnownAddressIntent,
     ReadOnlyIntentKind.TOKEN_PRICES: TokenPricesIntent,
     ReadOnlyIntentKind.PORTFOLIO_TOKENS: PortfolioTokensIntent,
+    ReadOnlyIntentKind.TRANSFER_HISTORY: TransferHistoryIntent,
 }
 
 _KIND_ALIASES = {
@@ -348,6 +428,8 @@ _KIND_ALIASES = {
     "get_token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
     "portfolio_tokens": ReadOnlyIntentKind.PORTFOLIO_TOKENS,
     "get_portfolio_tokens": ReadOnlyIntentKind.PORTFOLIO_TOKENS,
+    "transfer_history": ReadOnlyIntentKind.TRANSFER_HISTORY,
+    "get_transfer_history": ReadOnlyIntentKind.TRANSFER_HISTORY,
 }
 
 _VALUE_MOVING_WORDS = (
