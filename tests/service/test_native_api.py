@@ -18,7 +18,9 @@ def test_invoke_guide_returns_markdown() -> None:
     assert "text/markdown" in response.headers.get("content-type", "")
     assert response.text.startswith("# Mercury:")
     assert "`POST /v1/mercury/invoke`" in response.text
-    assert "known_address" in response.text
+    assert "`token_address`" in response.text or "token_address" in response.text
+    assert "ENS" in response.text
+    assert "ENSIP" in response.text
 
 
 def test_native_api_health_ready_and_readonly_invoke_routes() -> None:

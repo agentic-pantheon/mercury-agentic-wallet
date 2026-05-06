@@ -22,7 +22,7 @@ from mercury.graph.runtime import GraphRuntime, build_default_runtime
 from mercury.models.swaps import SwapProviderName
 from mercury.policy.idempotency import InMemoryIdempotencyStore
 from mercury.policy.risk import TransactionPolicyEngine
-from mercury.providers import Web3ProviderFactory
+from mercury.providers import Web3EnsAddressResolver, Web3ProviderFactory
 from mercury.service.errors import DependencyUnavailableError
 from mercury.swaps.base import SwapProviderConfig
 from mercury.swaps.cowswap import CowSwapProvider
@@ -103,6 +103,7 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
     secret_store = get_secret_store(settings)
     provider_factory = get_provider_factory(secret_store)
     signer = get_signer(secret_store)
+    ens_resolver = Web3EnsAddressResolver(provider_factory)
     swap_router = get_swap_router(settings, secret_store)
     transaction_deps = TransactionGraphDependencies(
         backend=Web3TransactionBackend(provider_factory),
@@ -124,6 +125,8 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
             address_resolver=signer,
         ),
         transaction_deps=transaction_deps,
+        runtime_settings=settings,
+        ens_resolver=ens_resolver,
     )
     request.app.state.graph_runtime = runtime
     return runtime

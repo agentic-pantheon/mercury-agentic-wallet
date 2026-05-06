@@ -25,6 +25,12 @@ from mercury.models.errors import (
 )
 from mercury.models.native_tx import NativeTransferIntent
 from mercury.models.swaps import SwapIntent
+from mercury.providers.ens import (
+    EnsResolutionError,
+    EVMIdentifierResolver,
+    effective_chain_name_for_resolution,
+    looks_like_potential_ens_name,
+)
 
 _STAGE = "validate_invoke_intent"
 
@@ -37,6 +43,18 @@ _VALUE_MOVING_MODEL: dict[str, type[Any]] = {
     "erc20_approval": ERC20ApprovalIntent,
     "native_transfer": NativeTransferIntent,
     "swap": SwapIntent,
+}
+
+
+_ENS_RESOLVABLE_FIELDS_BY_KIND: dict[str, tuple[str, ...]] = {
+    "native_transfer": ("recipient_address",),
+    "erc20_transfer": ("recipient_address",),
+    "erc20_approval": ("spender_address",),
+    "swap": ("recipient_address",),
+    "native_balance": ("wallet_address",),
+    "erc20_balance": ("wallet_address",),
+    "erc20_allowance": ("owner_address", "spender_address"),
+    "contract_read": ("contract_address",),
 }
 
 
@@ -88,6 +106,8 @@ def merged_invoke_validation_payload(raw: dict[str, Any]) -> dict[str, Any]:
 
 def validate_invoke_intent(
     state: MercuryState | Mapping[str, Any],
+    *,
+    ens_resolver: EVMIdentifierResolver | None = None,
 ) -> tuple[MercuryState | None, MercuryErrorInfo | None]:
     """Validate invoke intent input and normalize ``raw_input``.
 
@@ -97,6 +117,10 @@ def validate_invoke_intent(
         Either a :class:`~mercury.graph.state.MercuryState` mapping (uses
         ``raw_input``) or the merged intent dict itself (same surface as
         :func:`mercury.service.api._intent_with_boundary_fields`).
+    ens_resolver:
+        Optional mainnet ENS client used to expand dot-separated ENS names into
+        checksummed ``0x`` addresses for selected intent fields before Pydantic
+        validation.
 
     Returns
     -------
@@ -135,6 +159,10 @@ def validate_invoke_intent(
     kind_lower = raw_kind.strip().lower()
     merged = merged_invoke_validation_payload(raw)
 
+    ens_err = _apply_ens_resolution_to_merged(merged, kind_lower, ens_resolver)
+    if ens_err is not None:
+        return None, _enrich_invoke_validation_error(ens_err, merged)
+
     if kind_lower in _VALUE_MOVING_KINDS:
         model_cls = _VALUE_MOVING_MODEL[kind_lower]
         try:
@@ -165,6 +193,47 @@ def validate_invoke_intent(
         message=f"Unsupported wallet intent: {raw_kind}.",
         stage=_STAGE,
     )
+
+
+def _apply_ens_resolution_to_merged(
+    merged: dict[str, Any],
+    kind_lower: str,
+    resolver: EVMIdentifierResolver | None,
+) -> MercuryErrorInfo | None:
+    """Rewrite selected string fields from ENS names into checksum hex addresses."""
+
+    if resolver is None:
+        return None
+    fields = _ENS_RESOLVABLE_FIELDS_BY_KIND.get(kind_lower)
+    if not fields:
+        return None
+
+    chain_name = effective_chain_name_for_resolution(merged)
+
+    for field_name in fields:
+        raw_val = merged.get(field_name)
+        if raw_val is None or not isinstance(raw_val, str):
+            continue
+        trimmed = raw_val.strip()
+        if not trimmed:
+            continue
+        if not looks_like_potential_ens_name(trimmed):
+            continue
+        try:
+            merged[field_name] = resolver.resolve_evm_identifier(trimmed, chain_name)
+        except EnsResolutionError as exc:
+            return validation_failed(
+                message=str(exc),
+                stage=_STAGE,
+                details={
+                    "field": field_name,
+                    "provided": trimmed,
+                    "chain": chain_name,
+                    "resolution": "ens_forward",
+                },
+            )
+
+    return None
 
 
 def _extract_raw_blob(state: MercuryState | Mapping[str, Any]) -> Any:

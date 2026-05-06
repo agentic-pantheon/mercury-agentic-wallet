@@ -48,6 +48,59 @@ Aliases for the same intent: **`address_lookup`**, **`lookup_known_address`**.
 
 ---
 
+## ENS names (human-readable addresses)
+
+Mercury resolves **dot-separated ENS names** into checksummed ``0x`` addresses **before** graph execution. Resolution **starts on Ethereum mainnet ENS**, while the **`chain`** on your intent selects which **multichain address record** is read (ENSIP‑11 coin type)—for example a Base operation reads the Base address attached to the name, which may differ from the Ethereum mainnet address.
+
+**Where you can use DNS-style names** (same JSON field names as hex addresses):
+
+- ``native_balance.wallet_address``
+- ``erc20_balance.wallet_address``
+- ``erc20_allowance.owner_address``, ``erc20_allowance.spender_address``
+- ``contract_read.contract_address``
+- ``native_transfer.recipient_address``
+- ``erc20_transfer.recipient_address``
+- ``erc20_approval.spender_address``
+- ``swap.recipient_address`` *(optional)*
+
+**Do not pass ENS names** for token contract selection; those fields still expect checksummed ``0x`` contracts (or resolve symbols with ``kind: known_address``):
+
+- ``token_address``, ``from_token``, ``to_token``
+
+Examples:
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "chain": "base",
+  "intent": {
+    "kind": "native_balance",
+    "wallet_address": "vitalik.eth"
+  }
+}
+```
+
+```json
+{
+  "request_id": "req-send-ens",
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "idempotency_key": "send-ens-1",
+  "intent": {
+    "kind": "native_transfer",
+    "chain": "base",
+    "wallet_id": "primary",
+    "recipient_address": "alice.eth",
+    "amount": "0.001"
+  }
+}
+```
+
+If a name cannot be resolved or has no address for the requested chain, ``invoke`` returns ``validation_failed`` with details (no RPC URLs are echoed).
+
+---
+
 ## `POST /v1/mercury/invoke`
 
 **Content-Type:** `application/json`

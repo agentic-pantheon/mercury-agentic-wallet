@@ -26,6 +26,7 @@ from mercury.graph.nodes_swaps import SwapGraphDependencies
 from mercury.graph.nodes_transaction import TransactionGraphDependencies
 from mercury.graph.responses import format_error_response, format_unsupported_response
 from mercury.graph.state import MercuryState
+from mercury.providers.ens import EVMIdentifierResolver
 from mercury.tools.registry import ReadOnlyToolRegistry
 
 
@@ -56,12 +57,14 @@ class MercuryGraphRuntime:
         native_graph: InvokableGraph,
         swap_graph: InvokableGraph,
         runtime_settings: MercurySettings | None = None,
+        ens_resolver: EVMIdentifierResolver | None = None,
     ) -> None:
         self._read_graph = read_graph
         self._erc20_graph = erc20_graph
         self._native_graph = native_graph
         self._swap_graph = swap_graph
         self._runtime_settings = runtime_settings
+        self._ens_resolver = ens_resolver
 
     def invoke(self, state: MercuryState) -> MercuryState:
         """Invoke the graph that matches the request intent kind."""
@@ -70,7 +73,9 @@ class MercuryGraphRuntime:
         rid = state.get("request_id")
         request_id = rid if isinstance(rid, str) else ""
 
-        validated_state, validation_error = validate_invoke_intent(state)
+        validated_state, validation_error = validate_invoke_intent(
+            state, ens_resolver=self._ens_resolver
+        )
         if validation_error is not None:
             log_graph_event(
                 "invoke_intent_validation_failed",
@@ -187,6 +192,7 @@ def build_default_runtime(
     swap_deps: SwapGraphDependencies,
     transaction_deps: TransactionGraphDependencies,
     runtime_settings: MercurySettings | None = None,
+    ens_resolver: EVMIdentifierResolver | None = None,
 ) -> MercuryGraphRuntime:
     """Build Mercury's default compiled graphs from injectable dependencies."""
 
@@ -196,4 +202,5 @@ def build_default_runtime(
         native_graph=build_native_transaction_graph(native_deps, transaction_deps).compile(),
         swap_graph=build_swap_transaction_graph(swap_deps, transaction_deps).compile(),
         runtime_settings=runtime_settings,
+        ens_resolver=ens_resolver,
     )
