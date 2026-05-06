@@ -21,6 +21,9 @@ model.
 - Require policy checks, idempotency, and human approval before value-moving signing.
 - Sign transactions and EIP-712 typed data through a 1Claw-backed private-key boundary.
 - Expose both a native HTTP API and a pan-agentikit-compatible envelope API.
+- Accept **Alchemy Notify** Address Activity webhooks at
+  `POST /v1/webhooks/alchemy/address-activity` (HMAC-verified; dedicated handler graph,
+  not `invoke`). See `mercury/service/MERCURY_AGENT_GUIDE.md`.
 
 Mercury is intentionally conservative. Runtime readiness does not fetch wallet private
 keys, tests do not require real secrets, and value-moving actions do not sign unless

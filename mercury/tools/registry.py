@@ -17,12 +17,47 @@ class ReadOnlyToolRegistry:
         self._tools = {tool.name: tool for tool in tools}
 
     @classmethod
-    def from_provider_factory(cls, provider_factory: ProviderFactoryLike) -> ReadOnlyToolRegistry:
-        """Create a registry bound to a provider factory."""
+    def from_provider_factory(
+        cls,
+        provider_factory: ProviderFactoryLike,
+        *,
+        alchemy_prices: Any | None = None,
+        alchemy_portfolio: Any | None = None,
+        alchemy_transfers: Any | None = None,
+    ) -> ReadOnlyToolRegistry:
+        """Create a registry bound to a provider factory and optional Alchemy HTTP tools."""
 
         from mercury.tools import create_readonly_tools
+        from mercury.tools.portfolio_tokens import (
+            AlchemyPortfolioToolDeps,
+            create_alchemy_portfolio_tokens_tool,
+        )
+        from mercury.tools.token_prices import (
+            AlchemyPricesToolDeps,
+            create_alchemy_token_prices_tool,
+        )
+        from mercury.tools.transfer_history import (
+            AlchemyTransfersToolDeps,
+            create_alchemy_transfer_history_tool,
+        )
 
-        return cls(create_readonly_tools(provider_factory))
+        tools = list(create_readonly_tools(provider_factory))
+        if alchemy_prices is not None:
+            if not isinstance(alchemy_prices, AlchemyPricesToolDeps):
+                msg = "alchemy_prices must be AlchemyPricesToolDeps when provided."
+                raise TypeError(msg)
+            tools.append(create_alchemy_token_prices_tool(alchemy_prices))
+        if alchemy_portfolio is not None:
+            if not isinstance(alchemy_portfolio, AlchemyPortfolioToolDeps):
+                msg = "alchemy_portfolio must be AlchemyPortfolioToolDeps when provided."
+                raise TypeError(msg)
+            tools.append(create_alchemy_portfolio_tokens_tool(alchemy_portfolio))
+        if alchemy_transfers is not None:
+            if not isinstance(alchemy_transfers, AlchemyTransfersToolDeps):
+                msg = "alchemy_transfers must be AlchemyTransfersToolDeps when provided."
+                raise TypeError(msg)
+            tools.append(create_alchemy_transfer_history_tool(alchemy_transfers))
+        return cls(tools)
 
     def execute(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         """Execute a registered read-only tool."""

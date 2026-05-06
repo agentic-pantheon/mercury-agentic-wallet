@@ -13,6 +13,10 @@ graph TD;
 	get_erc20_allowance(get_erc20_allowance)
 	get_erc20_metadata(get_erc20_metadata)
 	read_contract(read_contract)
+	resolve_known_address(resolve_known_address)
+	get_token_prices(get_token_prices)
+	get_portfolio_tokens(get_portfolio_tokens)
+	get_transfer_history(get_transfer_history)
 	format_response(format_response)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> parse_intent;
@@ -20,15 +24,23 @@ graph TD;
 	get_erc20_balance --> format_response;
 	get_erc20_metadata --> format_response;
 	get_native_balance --> format_response;
+	get_portfolio_tokens --> format_response;
+	get_transfer_history --> format_response;
+	get_token_prices --> format_response;
 	parse_intent -.-> resolve_chain;
 	parse_intent -.-> unsupported_response;
 	read_contract --> format_response;
+	resolve_known_address --> format_response;
 	resolve_chain -.-> format_response;
 	resolve_chain -.-> get_erc20_allowance;
 	resolve_chain -.-> get_erc20_balance;
 	resolve_chain -.-> get_erc20_metadata;
 	resolve_chain -.-> get_native_balance;
+	resolve_chain -.-> get_portfolio_tokens;
+	resolve_chain -.-> get_token_prices;
+	resolve_chain -.-> get_transfer_history;
 	resolve_chain -.-> read_contract;
+	resolve_chain -.-> resolve_known_address;
 	format_response --> __end__;
 	unsupported_response --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2

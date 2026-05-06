@@ -9,6 +9,13 @@ def test_default_settings_load_without_secrets() -> None:
     assert settings.base_rpc_secret_path == "mercury/rpc/base"
     assert settings.oneclaw_vault_id == "mercury"
     assert settings.oneclaw_api_key_secret_source == "MERCURY_ONECLAW_API_KEY"
+    assert settings.alchemy_webhook_signing_key_secret_path.startswith("mercury/")
+
+
+def test_alchemy_signing_key_path_distinct_from_rest_api_path() -> None:
+    settings = MercurySettings()
+
+    assert settings.alchemy_api_secret_path != settings.alchemy_webhook_signing_key_secret_path
 
 
 def test_default_chain_is_ethereum() -> None:

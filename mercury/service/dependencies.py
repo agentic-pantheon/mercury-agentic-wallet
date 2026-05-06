@@ -30,6 +30,9 @@ from mercury.swaps.lifi import LiFiProvider
 from mercury.swaps.router import SwapRouter
 from mercury.swaps.uniswap import UniswapProvider
 from mercury.tools.registry import ReadOnlyToolRegistry
+from mercury.tools.portfolio_tokens import AlchemyPortfolioToolDeps
+from mercury.tools.token_prices import AlchemyPricesToolDeps
+from mercury.tools.transfer_history import AlchemyTransfersToolDeps
 from mercury.tools.transactions import (
     RequestMetadataTransactionApprover,
     Web3TransactionBackend,
@@ -112,8 +115,31 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
         approver=RequestMetadataTransactionApprover(),
         idempotency_store=InMemoryIdempotencyStore(),
     )
+    alchemy_prices: AlchemyPricesToolDeps | None = None
+    alchemy_portfolio: AlchemyPortfolioToolDeps | None = None
+    alchemy_transfers: AlchemyTransfersToolDeps | None = None
+    alchemy_path = settings.alchemy_api_secret_path.strip()
+    if alchemy_path:
+        alchemy_prices = AlchemyPricesToolDeps(
+            secret_store=secret_store,
+            api_key_secret_path=alchemy_path,
+        )
+        alchemy_portfolio = AlchemyPortfolioToolDeps(
+            secret_store=secret_store,
+            api_key_secret_path=alchemy_path,
+        )
+        alchemy_transfers = AlchemyTransfersToolDeps(
+            secret_store=secret_store,
+            api_key_secret_path=alchemy_path,
+        )
+
     runtime = build_default_runtime(
-        registry=ReadOnlyToolRegistry.from_provider_factory(provider_factory),
+        registry=ReadOnlyToolRegistry.from_provider_factory(
+            provider_factory,
+            alchemy_prices=alchemy_prices,
+            alchemy_portfolio=alchemy_portfolio,
+            alchemy_transfers=alchemy_transfers,
+        ),
         erc20_deps=ERC20GraphDependencies(
             provider_factory=provider_factory,
             address_resolver=signer,

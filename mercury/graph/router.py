@@ -13,6 +13,9 @@ ROUTE_ERC20_ALLOWANCE = "get_erc20_allowance"
 ROUTE_ERC20_METADATA = "get_erc20_metadata"
 ROUTE_CONTRACT_READ = "read_contract"
 ROUTE_RESOLVE_KNOWN_ADDRESS = "resolve_known_address"
+ROUTE_TOKEN_PRICES = "get_token_prices"
+ROUTE_PORTFOLIO_TOKENS = "get_portfolio_tokens"
+ROUTE_TRANSFER_HISTORY = "get_transfer_history"
 ROUTE_FORMAT_RESPONSE = "format_response"
 ROUTE_REJECT_TRANSACTION = "reject_transaction"
 ROUTE_REQUEST_APPROVAL = "request_approval"
@@ -31,6 +34,9 @@ _READ_ROUTES = {
     ReadOnlyIntentKind.ERC20_METADATA.value: ROUTE_ERC20_METADATA,
     ReadOnlyIntentKind.CONTRACT_READ.value: ROUTE_CONTRACT_READ,
     ReadOnlyIntentKind.KNOWN_ADDRESS.value: ROUTE_RESOLVE_KNOWN_ADDRESS,
+    ReadOnlyIntentKind.TOKEN_PRICES.value: ROUTE_TOKEN_PRICES,
+    ReadOnlyIntentKind.PORTFOLIO_TOKENS.value: ROUTE_PORTFOLIO_TOKENS,
+    ReadOnlyIntentKind.TRANSFER_HISTORY.value: ROUTE_TRANSFER_HISTORY,
 }
 
 

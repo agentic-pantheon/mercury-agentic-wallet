@@ -6,8 +6,15 @@ from enum import StrEnum
 from typing import Any, Literal, cast
 
 from langchain_core.messages import BaseMessage
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from mercury.alchemy.networks import (
+    UnknownAlchemyNetworkError,
+    alchemy_network_to_mercury_chain,
+    mercury_chain_to_alchemy_network,
+)
+from mercury.alchemy.transfers import ALLOWED_TRANSFER_CATEGORIES, TRANSFER_DEFAULT_CATEGORIES
+from mercury.chains import UnsupportedChainError, get_chain_by_name
 from mercury.models.addresses import normalize_evm_address
 
 
@@ -20,6 +27,9 @@ class ReadOnlyIntentKind(StrEnum):
     ERC20_METADATA = "erc20_metadata"
     CONTRACT_READ = "contract_read"
     KNOWN_ADDRESS = "known_address"
+    TOKEN_PRICES = "token_prices"
+    PORTFOLIO_TOKENS = "portfolio_tokens"
+    TRANSFER_HISTORY = "transfer_history"
     UNSUPPORTED = "unsupported"
 
 
@@ -136,6 +146,232 @@ class KnownAddressIntent(BaseReadOnlyIntent):
         return stripped
 
 
+class TokenPriceIntentEntry(BaseModel):
+    """One token price lookup target."""
+
+    model_config = ConfigDict(frozen=True)
+
+    chain: str = Field(min_length=1)
+    token_address: str = Field(min_length=1)
+
+    @field_validator("chain")
+    @classmethod
+    def normalize_entry_chain(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("chain must not be empty.")
+        return normalized
+
+    @field_validator("token_address")
+    @classmethod
+    def normalize_entry_token_address(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+
+class TokenPricesIntent(BaseReadOnlyIntent):
+    """Fetch token prices by contract address via Alchemy (read-only)."""
+
+    kind: Literal[ReadOnlyIntentKind.TOKEN_PRICES] = ReadOnlyIntentKind.TOKEN_PRICES
+    token_address: str | None = None
+    tokens: list[TokenPriceIntentEntry] = Field(default_factory=list)
+
+    @field_validator("token_address")
+    @classmethod
+    def normalize_optional_token_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_evm_address(value)
+
+    @model_validator(mode="after")
+    def _normalize_token_list(self) -> TokenPricesIntent:
+        entries: list[TokenPriceIntentEntry]
+        if self.tokens:
+            entries = list(self.tokens)
+        elif self.token_address is not None:
+            chain = self.chain
+            if not chain:
+                raise ValueError(
+                    "token_prices requires `chain` when using `token_address` without `tokens`."
+                )
+            entries = [TokenPriceIntentEntry(chain=chain, token_address=self.token_address)]
+        else:
+            raise ValueError("token_prices requires `tokens` or `token_address` with `chain`.")
+
+        if not entries:
+            raise ValueError("token_prices requires at least one token entry.")
+        if len(entries) > 25:
+            raise ValueError("token_prices supports at most 25 token entries per request.")
+        distinct_chains = {e.chain for e in entries}
+        if len(distinct_chains) > 3:
+            raise ValueError("token_prices supports at most 3 distinct chains per request.")
+
+        return self.model_copy(update={"tokens": entries, "token_address": None, "chain": None})
+
+
+class PortfolioTokensIntent(BaseReadOnlyIntent):
+    """List wallet token balances across chains via Alchemy Portfolio API."""
+
+    kind: Literal[ReadOnlyIntentKind.PORTFOLIO_TOKENS] = ReadOnlyIntentKind.PORTFOLIO_TOKENS
+    wallet_address: str = Field(min_length=1)
+    chains: list[str] | None = None
+    networks: list[str] | None = None
+    with_metadata: bool = True
+    with_prices: bool = True
+    include_native_tokens: bool = True
+    include_erc20_tokens: bool = True
+    page_key: str | None = None
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_portfolio_wallet(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+    @field_validator("page_key")
+    @classmethod
+    def normalize_portfolio_page_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def _resolve_chains(self) -> PortfolioTokensIntent:
+        has_chains = bool(self.chains)
+        has_networks = bool(self.networks)
+
+        if has_chains and has_networks:
+            raise ValueError("portfolio_tokens accepts either `chains` or `networks`, not both.")
+
+        resolved: list[str] = []
+        seen: set[str] = set()
+
+        if has_networks:
+            for n in self.networks or []:
+                if not isinstance(n, str):
+                    continue
+                segment = n.strip().lower()
+                if not segment:
+                    continue
+                try:
+                    mercury_name = alchemy_network_to_mercury_chain(segment)
+                except UnknownAlchemyNetworkError as exc:
+                    raise ValueError(str(exc)) from exc
+                if mercury_name not in seen:
+                    resolved.append(mercury_name)
+                    seen.add(mercury_name)
+        elif has_chains:
+            for c in self.chains or []:
+                if not isinstance(c, str):
+                    continue
+                name = c.strip().lower()
+                if not name or name in seen:
+                    continue
+                resolved.append(name)
+                seen.add(name)
+        else:
+            fallback = self.chain
+            if not fallback or not str(fallback).strip():
+                raise ValueError(
+                    "portfolio_tokens requires `chains`, `networks`, or a default `chain` field."
+                )
+            resolved.append(str(fallback).strip().lower())
+
+        if not resolved:
+            raise ValueError("portfolio_tokens requires at least one chain or network.")
+        if len(resolved) > 5:
+            raise ValueError("portfolio_tokens supports at most 5 distinct networks per request.")
+
+        for name in resolved:
+            try:
+                get_chain_by_name(name)
+            except UnsupportedChainError as exc:
+                msg = f"Unsupported Mercury chain '{name}' for portfolio lookup."
+                raise ValueError(msg) from exc
+            try:
+                mercury_chain_to_alchemy_network(name)
+            except UnknownAlchemyNetworkError as exc:
+                raise ValueError(str(exc)) from exc
+
+        return self.model_copy(
+            update={
+                "chains": resolved,
+                "networks": None,
+                "chain": None,
+            }
+        )
+
+
+class TransferHistoryIntent(BaseReadOnlyIntent):
+    """Historical asset transfers for one wallet via Alchemy ``alchemy_getAssetTransfers``."""
+
+    kind: Literal[ReadOnlyIntentKind.TRANSFER_HISTORY] = ReadOnlyIntentKind.TRANSFER_HISTORY
+    wallet_address: str = Field(min_length=1)
+    direction: str = "both"
+    categories: list[str] | None = None
+    from_block: str | int | None = None
+    to_block: str | int | None = None
+    max_count: int | None = None
+    page_key: str | None = None
+    with_metadata: bool = True
+    exclude_zero_value: bool = True
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_transfer_wallet(cls, value: str) -> str:
+        return normalize_evm_address(value)
+
+    @field_validator("page_key")
+    @classmethod
+    def normalize_transfer_page_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def _normalize_transfer_fields(self) -> TransferHistoryIntent:
+        aliases = {
+            "in": "incoming",
+            "incoming": "incoming",
+            "out": "outgoing",
+            "outgoing": "outgoing",
+            "both": "both",
+        }
+        key = self.direction.strip().lower()
+        if key not in aliases:
+            raise ValueError("direction must be incoming, outgoing, or both.")
+        dir_norm = aliases[key]
+
+        cats = self.categories
+        if not cats:
+            resolved = list(TRANSFER_DEFAULT_CATEGORIES)
+        else:
+            resolved = [c.strip().lower() for c in cats if isinstance(c, str) and c.strip()]
+            if not resolved:
+                raise ValueError("categories must include at least one non-empty category name.")
+            for c in resolved:
+                if c not in ALLOWED_TRANSFER_CATEGORIES:
+                    allowed = ", ".join(sorted(ALLOWED_TRANSFER_CATEGORIES))
+                    raise ValueError(f"Unsupported transfer category {c!r}. Allowed: {allowed}.")
+
+        mc = self.max_count
+        if mc is None:
+            mc = 100
+        if mc < 1 or mc > 1000:
+            raise ValueError("max_count must be between 1 and 1000 inclusive.")
+
+        page_key = None if dir_norm == "both" else self.page_key
+
+        return self.model_copy(
+            update={
+                "direction": dir_norm,
+                "categories": resolved,
+                "max_count": mc,
+                "page_key": page_key,
+            }
+        )
+
+
 class UnsupportedIntent(BaseModel):
     """A non-executable intent with a user-safe reason."""
 
@@ -152,6 +388,9 @@ type ParsedIntent = (
     | ERC20MetadataIntent
     | ContractReadIntent
     | KnownAddressIntent
+    | TokenPricesIntent
+    | PortfolioTokensIntent
+    | TransferHistoryIntent
     | UnsupportedIntent
 )
 
@@ -162,6 +401,9 @@ _INTENT_MODELS: dict[ReadOnlyIntentKind, type[BaseReadOnlyIntent]] = {
     ReadOnlyIntentKind.ERC20_METADATA: ERC20MetadataIntent,
     ReadOnlyIntentKind.CONTRACT_READ: ContractReadIntent,
     ReadOnlyIntentKind.KNOWN_ADDRESS: KnownAddressIntent,
+    ReadOnlyIntentKind.TOKEN_PRICES: TokenPricesIntent,
+    ReadOnlyIntentKind.PORTFOLIO_TOKENS: PortfolioTokensIntent,
+    ReadOnlyIntentKind.TRANSFER_HISTORY: TransferHistoryIntent,
 }
 
 _KIND_ALIASES = {
@@ -182,6 +424,12 @@ _KIND_ALIASES = {
     "known_address": ReadOnlyIntentKind.KNOWN_ADDRESS,
     "address_lookup": ReadOnlyIntentKind.KNOWN_ADDRESS,
     "lookup_known_address": ReadOnlyIntentKind.KNOWN_ADDRESS,
+    "token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
+    "get_token_prices": ReadOnlyIntentKind.TOKEN_PRICES,
+    "portfolio_tokens": ReadOnlyIntentKind.PORTFOLIO_TOKENS,
+    "get_portfolio_tokens": ReadOnlyIntentKind.PORTFOLIO_TOKENS,
+    "transfer_history": ReadOnlyIntentKind.TRANSFER_HISTORY,
+    "get_transfer_history": ReadOnlyIntentKind.TRANSFER_HISTORY,
 }
 
 _VALUE_MOVING_WORDS = (

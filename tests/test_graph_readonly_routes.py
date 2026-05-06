@@ -6,7 +6,10 @@ from mercury.graph.router import (
     ROUTE_ERC20_BALANCE,
     ROUTE_ERC20_METADATA,
     ROUTE_NATIVE_BALANCE,
+    ROUTE_PORTFOLIO_TOKENS,
     ROUTE_RESOLVE_CHAIN,
+    ROUTE_TOKEN_PRICES,
+    ROUTE_TRANSFER_HISTORY,
     ROUTE_UNSUPPORTED,
     route_after_parse,
     route_read_tool,
@@ -18,6 +21,44 @@ TOKEN = "0x000000000000000000000000000000000000cafE"
 OWNER = "0x0000000000000000000000000000000000000001"
 SPENDER = "0x0000000000000000000000000000000000000002"
 CONTRACT = "0x000000000000000000000000000000000000bEEF"
+
+
+def test_portfolio_tokens_intent_routes_to_portfolio_node() -> None:
+    state = _state_for(
+        {
+            "kind": "portfolio_tokens",
+            "wallet_address": WALLET,
+            "chain": "ethereum",
+        }
+    )
+
+    assert route_after_parse(state) == ROUTE_RESOLVE_CHAIN
+    assert route_read_tool(state) == ROUTE_PORTFOLIO_TOKENS
+
+
+def test_transfer_history_intent_routes_to_history_node() -> None:
+    state = _state_for(
+        {
+            "kind": "transfer_history",
+            "wallet_address": WALLET,
+            "chain": "ethereum",
+        }
+    )
+
+    assert route_after_parse(state) == ROUTE_RESOLVE_CHAIN
+    assert route_read_tool(state) == ROUTE_TRANSFER_HISTORY
+
+
+def test_token_prices_intent_routes_to_token_prices_node() -> None:
+    state = _state_for(
+        {
+            "kind": "token_prices",
+            "tokens": [{"chain": "base", "token_address": TOKEN}],
+        }
+    )
+
+    assert route_after_parse(state) == ROUTE_RESOLVE_CHAIN
+    assert route_read_tool(state) == ROUTE_TOKEN_PRICES
 
 
 def test_native_balance_intent_routes_to_native_balance_node() -> None:
