@@ -131,6 +131,58 @@ Use `category: protocol` plus keys such as **`AAVE_V3.pool`** for contract addre
 
 ---
 
+## Example: read ERC20 token balance (read-only)
+
+Use **`erc20_balance`** when you already have a checksummed contract address for the token.
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "chain": "base",
+  "intent": {
+    "kind": "erc20_balance",
+    "token_address": "0x0555E30Da8F98308edB960aa94C0DBA30dd6B0c2",
+    "wallet_address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+  }
+}
+```
+
+Resolve symbol tickers (WBTC, USDC, …) via **`kind: known_address`** on the same chain **before** calling `erc20_balance`.
+
+---
+
+## Example: arbitrary contract view call (`contract_read`)
+
+Avoid Solidity signature strings like ``function balanceOf(...)``. Mercury expects **`abi_fragment`** as a **JSON array** of EIP-712 ABI fragments (objects), plus **`function_name`** and **`args`**:
+
+```json
+{
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "chain": "base",
+  "intent": {
+    "kind": "contract_read",
+    "contract_address": "0x0555E30Da8F98308edB960aa94C0DBA30dd6B0c2",
+    "abi_fragment": [
+      {
+        "type": "function",
+        "name": "balanceOf",
+        "stateMutability": "view",
+        "inputs": [{"name": "account", "type": "address"}],
+        "outputs": [{"type": "uint256"}]
+      }
+    ],
+    "function_name": "balanceOf",
+    "args": ["0xc1923710468607b8b7db38a6afbb9b432744390c"]
+  }
+}
+```
+
+Standard ERC20 balances should still prefer **`erc20_balance`** instead of encoding `balanceOf` yourself.
+
+---
+
 ## Example: ERC20 transfer (first call — approval often required)
 
 Use a stable idempotency key for this logical operation. Either set **`idempotency_key`** on the body or pass **`Idempotency-Key`**.

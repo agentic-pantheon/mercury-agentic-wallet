@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Protocol, cast, runtime_checkable
 
+from langchain_core.messages import AIMessage
+
 from mercury.config import MercurySettings, get_settings
 from mercury.graph.agent import (
     build_erc20_transaction_graph,
@@ -16,11 +18,13 @@ from mercury.graph.agent import (
     build_native_transaction_graph,
     build_swap_transaction_graph,
 )
+from mercury.graph.intent_validation import validate_invoke_intent
 from mercury.graph.logging import log_graph_event
 from mercury.graph.nodes_erc20 import ERC20GraphDependencies
 from mercury.graph.nodes_native import NativeGraphDependencies
 from mercury.graph.nodes_swaps import SwapGraphDependencies
 from mercury.graph.nodes_transaction import TransactionGraphDependencies
+from mercury.graph.responses import format_error_response, format_unsupported_response
 from mercury.graph.state import MercuryState
 from mercury.tools.registry import ReadOnlyToolRegistry
 
@@ -63,27 +67,46 @@ class MercuryGraphRuntime:
         """Invoke the graph that matches the request intent kind."""
 
         settings = self._runtime_settings if self._runtime_settings is not None else get_settings()
-        graph, graph_label = self._graph_selection_for_state(state)
-        config = self._runnable_config_for_state(state, graph_label)
         rid = state.get("request_id")
         request_id = rid if isinstance(rid, str) else ""
 
+        validated_state, validation_error = validate_invoke_intent(state)
+        if validation_error is not None:
+            log_graph_event(
+                "invoke_intent_validation_failed",
+                request_id=request_id,
+                intent_kind=_intent_kind_from_state(state),
+                error_code=validation_error.code,
+            )
+            failed = dict(state)
+            failed["error"] = validation_error
+            if validation_error.code == "unsupported_intent":
+                text = format_unsupported_response(validation_error)
+            else:
+                text = format_error_response(validation_error)
+            failed["response_text"] = text
+            failed["messages"] = [AIMessage(content=text)]
+            return cast(MercuryState, failed)
+
+        working_state = cast(MercuryState, validated_state)
+        graph, graph_label = self._graph_selection_for_state(working_state)
+        config = self._runnable_config_for_state(working_state, graph_label)
         stream_fn = getattr(graph, "stream", None)
 
         log_graph_event(
             "graph_run_start",
             request_id=request_id,
             graph=graph_label,
-            intent_kind=_intent_kind_from_state(state),
+            intent_kind=_intent_kind_from_state(working_state),
         )
 
         if not settings.graph_node_logging or stream_fn is None:
-            result = graph.invoke(state, config=config)
+            result = graph.invoke(working_state, config=config)
             return cast(MercuryState, result)
 
         last_values: MercuryState | None = None
         for mode, payload in stream_fn(
-            state,
+            working_state,
             stream_mode=["updates", "values"],
             config=config,
         ):
@@ -103,7 +126,7 @@ class MercuryGraphRuntime:
                 last_values = cast(MercuryState, dict(payload))
 
         if last_values is None:
-            return cast(MercuryState, graph.invoke(state, config=config))
+            return cast(MercuryState, graph.invoke(working_state, config=config))
         return last_values
 
     def _graph_selection_for_state(self, state: MercuryState) -> tuple[InvokableGraph, str]:
