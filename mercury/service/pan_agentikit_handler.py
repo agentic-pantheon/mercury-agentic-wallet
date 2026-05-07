@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from mercury.graph.runtime import GraphRuntime
 from mercury.graph.state import MercuryState
+from mercury.invoke import invoke_response_from_state
 from mercury.service.logging import redact_error_message, redact_value
 from mercury.service.models import MercuryInvokeRequest, MercuryInvokeResponse
 from mercury.service.pan_agentikit_models import (
@@ -390,9 +391,9 @@ def _native_response_from_state(
     request_id: str,
     fallback_chain: str | None,
 ) -> MercuryInvokeResponse:
-    from mercury.service.api import _response_from_state
-
-    return _response_from_state(state, request_id=request_id, fallback_chain=fallback_chain)
+    return invoke_response_from_state(
+        state, request_id=request_id, fallback_chain=fallback_chain
+    )
 
 
 def _task_intent(payload: TaskRequestV1) -> dict[str, Any] | str:

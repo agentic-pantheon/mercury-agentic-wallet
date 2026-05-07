@@ -1,7 +1,5 @@
 """Typed application settings for Mercury."""
 
-from functools import lru_cache
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -85,8 +83,12 @@ class MercurySettings(BaseSettings):
     )
 
 
-@lru_cache
 def get_settings() -> MercurySettings:
-    """Return cached application settings."""
+    """Return application settings from the current process environment.
+
+    Intentionally not cached: hosts (e.g. Telegram bots) may call ``load_dotenv``
+    after some imports; a cached singleton would keep pre-dotenv values while
+    fresh :class:`MercurySettings` calls would see the updated environment.
+    """
 
     return MercurySettings()
