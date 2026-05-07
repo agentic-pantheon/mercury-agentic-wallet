@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from mercury.graph.state import MercuryState
-from mercury.invoke import MercuryInvoker, get_invoke_guide_markdown, invoke_mercury
-from mercury.models.errors import internal_error
+from mercury.invoke import MercuryInvoker, get_invoke_guide_markdown, invoke_mercury, invoke_response_from_state
+from mercury.models.addresses import InvalidEVMAddressError
+from mercury.models.errors import internal_error, validation_failed
 from mercury.service.errors import GraphInvocationError
 from mercury.service.models import MercuryInvokeRequest
 
@@ -111,6 +114,36 @@ def test_mercury_invoker_maps_state_error_with_redaction() -> None:
     assert "https://rpc.example.invalid" not in text
     assert "mercury/wallets/primary/private_key" not in text
     assert "<redacted>" in text
+
+
+def test_invoke_response_serializes_validation_details_with_embedded_exceptions() -> None:
+    """Pydantic validation errors may carry exception instances in ``ctx``; response must stay JSON-safe."""
+
+    info = validation_failed(
+        message="Invalid field 'from_token': invalid.",
+        details={
+            "errors": [
+                {
+                    "type": "value_error",
+                    "loc": ("from_token",),
+                    "msg": "Invalid EVM address.",
+                    "ctx": {"error": InvalidEVMAddressError("Invalid EVM address.")},
+                }
+            ]
+        },
+    )
+    state: MercuryState = {
+        "request_id": "rid",
+        "error": info,
+        "chain_name": "ethereum",
+    }
+    response = invoke_response_from_state(state, request_id="rid", fallback_chain=None)
+    assert response.status == "failed"
+    assert response.error is not None
+    dumped = response.model_dump(mode="json")
+
+    json.dumps(dumped)
+    assert "Invalid EVM address" in str(dumped)
 
 
 def test_get_invoke_guide_markdown_matches_http_guide_contract() -> None:

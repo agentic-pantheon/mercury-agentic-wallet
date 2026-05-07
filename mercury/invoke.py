@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Set as AbstractSet
 from pathlib import Path
 from typing import Any, cast
 
@@ -97,8 +97,8 @@ class MercuryInvoker:
 def _mercury_error_from_info(info: MercuryErrorInfo) -> MercuryError:
     """Map domain error info to API `MercuryError` with redacted text and details."""
 
-    dumped = info.model_dump(mode="json")
-    safe = redact_value(dumped)
+    coerced = _jsonable(info.model_dump(mode="python"))
+    safe = redact_value(coerced)
     if not isinstance(safe, dict):
         safe = {}
     message = redact_error_message(str(safe.get("message", "")))
@@ -186,7 +186,7 @@ def _response_from_state(
     chain = _chain_name(state, fallback_chain)
 
     if execution is not None:
-        execution_payload = redact_value(execution.model_dump(mode="json"))
+        execution_payload = redact_value(_jsonable(execution.model_dump(mode="python")))
         status = str(execution.status.value)
         approval_required = _approval_required(approval)
         if approval_required:
@@ -298,21 +298,40 @@ def _mapping(value: object) -> dict[str, Any] | None:
     if value is None:
         return None
     if hasattr(value, "model_dump"):
-        dumped = value.model_dump(mode="json")
-        return dumped if isinstance(dumped, dict) else None
+        try:
+            dumped: object = value.model_dump(mode="json")
+        except Exception:
+            dumped = value.model_dump(mode="python")
+        coerced = _jsonable(dumped)
+        return coerced if isinstance(coerced, dict) else None
     if isinstance(value, Mapping):
-        return dict(value)
+        coerced = _jsonable(dict(value))
+        return coerced if isinstance(coerced, dict) else None
     return None
 
 
 def _jsonable(value: object) -> object:
+    """Coerce graph state values so :func:`redact_value` and JSON responses never see raw exceptions."""
+
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, BaseException):
+        return str(redact_error_message(value))
+    if isinstance(value, bytes | bytearray):
+        return "<bytes>"
     if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
+        try:
+            raw: object = value.model_dump(mode="json")
+        except Exception:
+            raw = value.model_dump(mode="python")
+        return _jsonable(raw)
     if isinstance(value, Mapping):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
         return [_jsonable(item) for item in value]
-    return value
+    if isinstance(value, AbstractSet):
+        return [_jsonable(item) for item in value]
+    return str(redact_value(value))
 
 
 def _string_or_none(value: object) -> str | None:
