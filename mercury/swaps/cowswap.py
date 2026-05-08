@@ -131,6 +131,12 @@ class CowSwapProvider:
     def get_quote(self, request: SwapQuoteRequest) -> SwapQuote:
         """Fetch and normalize a CoW Swap quote."""
 
+        if request.from_token_is_native:
+            raise SwapProviderError(
+                "CoW Swap quotes do not support selling the chain native token in this "
+                "adapter; use wrapped native or another provider."
+            )
+
         slug = cow_network_slug_for_chain_id(request.chain_id)
         response = self._http.post_json(
             f"{slug}/api/v1/quote",

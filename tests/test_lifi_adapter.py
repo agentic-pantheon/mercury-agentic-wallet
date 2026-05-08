@@ -1,5 +1,7 @@
 from typing import Any, cast
 
+from mercury.models.addresses import normalize_evm_address
+from mercury.models.erc20 import ZERO_ADDRESS
 from mercury.models.swaps import SwapExecutionType, SwapProviderName, SwapQuoteRequest
 from mercury.swaps.lifi import LiFiProvider
 
@@ -34,6 +36,44 @@ def test_lifi_build_execution_produces_evm_payload() -> None:
     assert execution.transaction is not None
     assert execution.transaction.to == SWAP_TO
     assert execution.transaction.data == "0x1234"
+
+
+def test_lifi_native_quote_sends_canonical_native_as_from_token_param() -> None:
+    http = FakeHttpClient(_lifi_response())
+    provider = LiFiProvider(http_client=http)
+
+    provider.get_quote(_native_request())
+
+    params = cast(dict[str, Any], http.get_requests[0]["params"])
+    assert params["fromToken"] == normalize_evm_address(ZERO_ADDRESS)
+
+
+def test_lifi_native_quote_keeps_route_from_token_matching_request_despite_wrapped_action() -> (
+    None
+):
+    body = _lifi_response()
+    action = cast(dict[str, Any], body["action"])
+    action["fromToken"] = "0x4200000000000000000000000000000000000006"
+    http = FakeHttpClient(body)
+    provider = LiFiProvider(http_client=http)
+
+    req = _native_request()
+    quote = provider.get_quote(req)
+
+    assert quote.route.from_token == req.from_token
+
+
+def test_lifi_build_execution_preserves_nonzero_transaction_value() -> None:
+    raw = _lifi_response()
+    tr = cast(dict[str, Any], raw["transactionRequest"])
+    tr["value"] = "5000000000000000"
+    provider = LiFiProvider(http_client=FakeHttpClient(raw))
+    quote = provider.get_quote(_native_request())
+
+    execution = provider.build_execution(quote)
+
+    assert execution.transaction is not None
+    assert execution.transaction.value_wei == 5_000_000_000_000_000
 
 
 class FakeHttpClient:
@@ -73,6 +113,23 @@ def _request() -> SwapQuoteRequest:
         amount_in_raw=1_500_000,
         max_slippage_bps=50,
         idempotency_key="swap-1",
+    )
+
+
+def _native_request() -> SwapQuoteRequest:
+    return SwapQuoteRequest(
+        wallet_id="primary",
+        wallet_address=WALLET,
+        chain="base",
+        chain_id=8453,
+        from_token=ZERO_ADDRESS,
+        to_token=TOKEN_OUT,
+        amount_in="1.5",
+        amount_in_raw=1_500_000,
+        max_slippage_bps=50,
+        idempotency_key="swap-1",
+        from_token_is_native=True,
+        wrapped_from_token="0x4200000000000000000000000000000000000006",
     )
 
 

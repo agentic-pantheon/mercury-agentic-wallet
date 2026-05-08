@@ -30,7 +30,7 @@ class SwapPolicyConfig:
         }
     )
     max_slippage_bps: int = 100
-    allow_bridges: bool = False
+    allow_bridges: bool = True
 
 
 def evaluate_swap_quote_policy(

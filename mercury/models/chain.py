@@ -18,6 +18,10 @@ class ChainConfig(ChainReference):
     native_symbol: str = Field(min_length=1)
     rpc_secret_path: str = Field(min_length=1)
     block_explorer_url: str = Field(min_length=1)
+    wrapped_native_token_address: str | None = Field(
+        default=None,
+        description="Checksum address of wrapped native token (e.g. WETH) when known.",
+    )
 
     def to_reference(self) -> ChainReference:
         """Return a compact chain reference."""

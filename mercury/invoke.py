@@ -24,6 +24,41 @@ from mercury.service.models import MercuryError, MercuryInvokeRequest, MercuryIn
 _INVOKE_AGENT_GUIDE_PATH = Path(__file__).resolve().parent / "service" / "MERCURY_AGENT_GUIDE.md"
 
 
+def _invoke_request_summary(
+    payload: MercuryInvokeRequest,
+    request_id: str,
+    idempotency_key: str | None,
+) -> str:
+    kind = _intent_kind_from_payload(payload)
+    boundary = payload.chain if payload.chain else "unset"
+    idem = idempotency_key or "none"
+    return (
+        f"begin kind={kind} wallet={payload.wallet_id} boundary_chain={boundary} "
+        f"idem={idem} rid={request_id} → validate intent, route subgraph"
+    )
+
+
+def _invoke_response_summary(response: MercuryInvokeResponse, request_id: str) -> str:
+    msg = (response.message or "").strip()
+    msg_tail = ""
+    if msg:
+        msg_tail = f" msg={msg[:140]}{'…' if len(msg) > 140 else ''}"
+    err_code = response.error.code if response.error is not None else None
+    if err_code and not msg_tail:
+        msg_tail = f" code={err_code}"
+    hint = {
+        "succeeded": "completed",
+        "failed": "validation/domain error",
+        "rejected": "rejected (prep/policy/simulation — see msg)",
+        "approval_required": "approval gate",
+    }.get(response.status, str(response.status))
+    return (
+        f"end status={response.status} chain={response.chain!r} "
+        f"approve={response.approval_required} tx={response.tx_hash!r} rid={request_id} "
+        f"({hint}){msg_tail}"
+    )
+
+
 def get_invoke_guide_markdown() -> str:
     """Return Markdown instructions for native Mercury invoke (same body as the HTTP guide)."""
 
@@ -68,6 +103,7 @@ class MercuryInvoker:
         )
         log_service_event(
             "invoke_request",
+            summary=_invoke_request_summary(payload, request_id, effective_idempotency_key),
             request_id=request_id,
             user_id=payload.user_id,
             wallet_id=payload.wallet_id,
@@ -87,6 +123,7 @@ class MercuryInvoker:
         )
         log_service_event(
             "invoke_response",
+            summary=_invoke_response_summary(response, request_id),
             **_invoke_response_log_fields(payload, response, request_id=request_id),
         )
         return response
@@ -350,7 +387,6 @@ def _mapping(value: object) -> dict[str, Any] | None:
 
 def _jsonable(value: object) -> object:
     """Coerce graph state values for ``redact_value`` / JSON responses (no raw exceptions)."""
-
     if value is None or isinstance(value, bool | int | float | str):
         return value
     if isinstance(value, BaseException):

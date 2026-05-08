@@ -1,6 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from mercury.models.addresses import normalize_evm_address
+from mercury.models.erc20 import ZERO_ADDRESS
+from mercury.models.native_tokens import NATIVE_FROM_TOKEN_SENTINEL_ALIAS
 from mercury.models.swaps import (
     SwapIntent,
     SwapProviderName,
@@ -15,6 +18,136 @@ TOKEN_IN = "0x000000000000000000000000000000000000cafE"
 TOKEN_OUT = "0x000000000000000000000000000000000000dEaD"
 WALLET = "0x000000000000000000000000000000000000bEEF"
 SPENDER = "0x0000000000000000000000000000000000000002"
+# Mainnet WETH placeholder for native sell quote request tests.
+WETH_MAINNET = normalize_evm_address("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+
+
+def test_swap_intent_native_zero_from_token_normalized_canonically() -> None:
+    canonical_zero = normalize_evm_address(ZERO_ADDRESS)
+    intent = SwapIntent(
+        wallet_id="primary",
+        chain="ethereum",
+        from_token=ZERO_ADDRESS.lower(),
+        to_token=TOKEN_OUT,
+        amount_in="1",
+        idempotency_key="swap-native",
+    )
+    assert intent.from_token == canonical_zero
+
+
+def test_swap_intent_native_alias_from_token_normalized_canonically() -> None:
+    canonical_zero = normalize_evm_address(ZERO_ADDRESS)
+    intent = SwapIntent(
+        wallet_id="primary",
+        chain="ethereum",
+        from_token=NATIVE_FROM_TOKEN_SENTINEL_ALIAS.lower(),
+        to_token=TOKEN_OUT,
+        amount_in="1",
+        idempotency_key="swap-native-alias",
+    )
+    assert intent.from_token == canonical_zero
+
+
+def test_swap_intent_to_token_sentinel_alias_is_plain_checksum_address() -> None:
+    intent = SwapIntent(
+        wallet_id="primary",
+        chain="ethereum",
+        from_token=TOKEN_IN,
+        to_token=NATIVE_FROM_TOKEN_SENTINEL_ALIAS.lower(),
+        amount_in="1",
+        idempotency_key="swap-to-alias",
+    )
+    assert intent.to_token == NATIVE_FROM_TOKEN_SENTINEL_ALIAS
+    assert intent.from_token != normalize_evm_address(ZERO_ADDRESS)
+
+
+def test_swap_quote_request_native_from_token_normalized() -> None:
+    canonical_zero = normalize_evm_address(ZERO_ADDRESS)
+    req = SwapQuoteRequest(
+        wallet_id="primary",
+        wallet_address=WALLET,
+        chain="ethereum",
+        chain_id=1,
+        from_token=ZERO_ADDRESS.lower(),
+        to_token=TOKEN_OUT,
+        amount_in="1",
+        amount_in_raw=10**18,
+        idempotency_key="quote-native",
+        from_token_is_native=True,
+        wrapped_from_token=WETH_MAINNET,
+    )
+    assert req.from_token == canonical_zero
+
+
+def test_swap_quote_request_native_alias_from_token_normalized() -> None:
+    canonical_zero = normalize_evm_address(ZERO_ADDRESS)
+    req = SwapQuoteRequest(
+        wallet_id="primary",
+        wallet_address=WALLET,
+        chain="ethereum",
+        chain_id=1,
+        from_token=NATIVE_FROM_TOKEN_SENTINEL_ALIAS.lower(),
+        to_token=TOKEN_OUT,
+        amount_in="1",
+        amount_in_raw=10**18,
+        idempotency_key="quote-alias",
+        from_token_is_native=True,
+        wrapped_from_token=WETH_MAINNET,
+    )
+    assert req.from_token == canonical_zero
+
+
+def test_swap_quote_request_rejects_native_placeholder_without_flag() -> None:
+    with pytest.raises(ValidationError, match="from_token_is_native must be True"):
+        SwapQuoteRequest(
+            wallet_id="primary",
+            wallet_address=WALLET,
+            chain="ethereum",
+            chain_id=1,
+            from_token=ZERO_ADDRESS.lower(),
+            to_token=TOKEN_OUT,
+            amount_in="1",
+            amount_in_raw=10**18,
+            idempotency_key="bad-native",
+        )
+
+
+def test_swap_quote_request_rejects_native_without_wrapped() -> None:
+    with pytest.raises(ValidationError, match="wrapped_from_token is required"):
+        SwapQuoteRequest(
+            wallet_id="primary",
+            wallet_address=WALLET,
+            chain="ethereum",
+            chain_id=1,
+            from_token=ZERO_ADDRESS.lower(),
+            to_token=TOKEN_OUT,
+            amount_in="1",
+            amount_in_raw=10**18,
+            idempotency_key="bad-wrapped",
+            from_token_is_native=True,
+        )
+
+
+def test_swap_quote_request_rejects_wrapped_on_erc20_sell() -> None:
+    with pytest.raises(ValidationError, match="wrapped_from_token must be omitted"):
+        SwapQuoteRequest(
+            wallet_id="primary",
+            wallet_address=WALLET,
+            chain="ethereum",
+            chain_id=1,
+            from_token=TOKEN_IN,
+            to_token=TOKEN_OUT,
+            amount_in="1",
+            amount_in_raw=1_000_000,
+            idempotency_key="bad-erc20-wrapped",
+            wrapped_from_token=WETH_MAINNET,
+        )
+
+
+def test_swap_quote_request_non_native_defaults() -> None:
+    req = _request()
+    assert req.from_token_is_native is False
+    assert req.wrapped_from_token is None
 
 
 def test_swap_intent_normalizes_addresses_and_provider() -> None:

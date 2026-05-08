@@ -1,4 +1,7 @@
+import pytest
+from mercury.models.erc20 import ZERO_ADDRESS
 from mercury.models.swaps import SwapExecutionType, SwapQuoteRequest
+from mercury.swaps.base import SwapProviderError
 from mercury.swaps.uniswap import UniswapProvider
 
 TOKEN_IN = "0x000000000000000000000000000000000000cafE"
@@ -19,6 +22,13 @@ def test_uniswap_quote_and_build_normalize_mocked_api() -> None:
     assert execution.execution_type == SwapExecutionType.EVM_TRANSACTION
     assert execution.transaction is not None
     assert execution.transaction.to == SWAP_TO
+
+
+def test_uniswap_rejects_native_sell_with_clear_error() -> None:
+    provider = UniswapProvider(http_client=FakeHttpClient())
+
+    with pytest.raises(SwapProviderError, match="native token"):
+        provider.get_quote(_native_request())
 
 
 class FakeHttpClient:
@@ -68,4 +78,20 @@ def _request() -> SwapQuoteRequest:
         amount_in="1.5",
         amount_in_raw=1_500_000,
         idempotency_key="swap-1",
+    )
+
+
+def _native_request() -> SwapQuoteRequest:
+    return SwapQuoteRequest(
+        wallet_id="primary",
+        wallet_address=WALLET,
+        chain="base",
+        chain_id=8453,
+        from_token=ZERO_ADDRESS,
+        to_token=TOKEN_OUT,
+        amount_in="1.5",
+        amount_in_raw=1_500_000,
+        idempotency_key="swap-1",
+        from_token_is_native=True,
+        wrapped_from_token="0x4200000000000000000000000000000000000006",
     )

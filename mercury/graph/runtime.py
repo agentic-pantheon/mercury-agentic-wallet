@@ -19,6 +19,11 @@ from mercury.graph.agent import (
     build_swap_transaction_graph,
 )
 from mercury.graph.intent_validation import validate_invoke_intent
+from mercury.graph.log_summaries import (
+    graph_node_finished_summary,
+    graph_run_start_summary,
+    invoke_intent_validation_failed_summary,
+)
 from mercury.graph.logging import log_graph_event
 from mercury.graph.nodes_erc20 import ERC20GraphDependencies
 from mercury.graph.nodes_native import NativeGraphDependencies
@@ -77,10 +82,16 @@ class MercuryGraphRuntime:
             state, ens_resolver=self._ens_resolver
         )
         if validation_error is not None:
+            kind = _intent_kind_from_state(state)
             log_graph_event(
                 "invoke_intent_validation_failed",
+                summary=invoke_intent_validation_failed_summary(
+                    kind,
+                    code=validation_error.code,
+                    message=validation_error.message,
+                ),
                 request_id=request_id,
-                intent_kind=_intent_kind_from_state(state),
+                intent_kind=kind,
                 error_code=validation_error.code,
             )
             failed = dict(state)
@@ -98,11 +109,13 @@ class MercuryGraphRuntime:
         config = self._runnable_config_for_state(working_state, graph_label)
         stream_fn = getattr(graph, "stream", None)
 
+        ik = _intent_kind_from_state(working_state)
         log_graph_event(
             "graph_run_start",
+            summary=graph_run_start_summary(graph_label, ik),
             request_id=request_id,
             graph=graph_label,
-            intent_kind=_intent_kind_from_state(working_state),
+            intent_kind=ik,
         )
 
         if not settings.graph_node_logging or stream_fn is None:
@@ -122,6 +135,10 @@ class MercuryGraphRuntime:
                         keys = sorted(str(k) for k in patch.keys())
                     log_graph_event(
                         "graph_node_finished",
+                        summary=graph_node_finished_summary(
+                            node_name,
+                            patch if isinstance(patch, Mapping) else None,
+                        ),
                         request_id=request_id,
                         graph=graph_label,
                         node=node_name,

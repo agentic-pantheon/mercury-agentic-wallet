@@ -4,7 +4,9 @@ from mercury.graph.agent import build_swap_transaction_graph
 from mercury.graph.nodes_swaps import SwapGraphDependencies, route_swap_intent
 from mercury.graph.nodes_transaction import TransactionGraphDependencies
 from mercury.models import ExecutionStatus, GasFees, PreparedTransaction, SignedTransactionResult
+from mercury.models.addresses import normalize_evm_address
 from mercury.models.approval import ApprovalRequest, ApprovalResult, ApprovalStatus
+from mercury.models.erc20 import ZERO_ADDRESS
 from mercury.models.execution import ExecutableTransaction, TransactionReceipt
 from mercury.models.policy import PolicyDecisionStatus
 from mercury.models.signing import SignTransactionRequest
@@ -70,6 +72,40 @@ def test_swap_graph_prepares_approval_before_swap_when_allowance_is_insufficient
     assert "build" not in events
 
 
+def test_native_from_token_swap_runs_pipeline_without_erc20_approval_and_keeps_tx_value() -> None:
+    """Native *from_token* skips allowance/approval txn and broadcasts with value."""
+    events: list[str] = []
+    signer = FakeSigner(events, expected_to=SWAP_TO)
+    graph = _graph(events, signer, allowance=0, swap_provider_cls=NativeSellFakeSwapProvider)
+
+    result = graph.invoke(
+        {"raw_input": _swap_payload("swap-native-from-1", from_token_native=True)}
+    )
+
+    assert result["execution_result"].status == ExecutionStatus.CONFIRMED
+    prepared_swap = result["prepared_swap"]
+    assert prepared_swap.approval_transaction is None
+    assert prepared_swap.allowance is None
+    assert prepared_swap.quote.request.from_token_is_native is True
+    pt = result["prepared_transaction"]
+    assert pt.metadata["action"] == "swap"
+    assert pt.value_wei == prepared_swap.quote.request.amount_in_raw
+    assert pt.value_wei > 0
+    assert events == [
+        "address",
+        "quote",
+        "build",
+        "address",
+        "nonce",
+        "gas",
+        "simulate",
+        "approval",
+        "sign",
+        "broadcast",
+        "monitor",
+    ]
+
+
 def test_route_swap_intent_rejects_non_swap_payload() -> None:
     assert route_swap_intent({"raw_input": {"kind": "erc20_transfer"}}) == "unsupported_response"
 
@@ -126,6 +162,25 @@ class FakeSwapProvider:
                 chain_id=quote.request.chain_id,
                 to=SWAP_TO,
                 data="0x1234",
+            ),
+        )
+
+
+class NativeSellFakeSwapProvider(FakeSwapProvider):
+    """LiFi-shaped fake that attaches value for native sells."""
+
+    def build_execution(self, quote: SwapQuote) -> SwapExecution:
+        self._events.append("build")
+        value_wei = quote.request.amount_in_raw if quote.request.from_token_is_native else 0
+        return SwapExecution(
+            provider=self.name,
+            execution_type=SwapExecutionType.EVM_TRANSACTION,
+            quote=quote,
+            transaction=SwapEVMTransaction(
+                chain_id=quote.request.chain_id,
+                to=SWAP_TO,
+                data="0x1234",
+                value_wei=value_wei,
             ),
         )
 
@@ -240,7 +295,13 @@ class FakeCowSwapProvider:
         )
 
 
-def _graph(events: list[str], signer: FakeSigner, *, allowance: int) -> Any:
+def _graph(
+    events: list[str],
+    signer: FakeSigner,
+    *,
+    allowance: int,
+    swap_provider_cls: type[FakeSwapProvider] = FakeSwapProvider,
+) -> Any:
     factory = FakeProviderFactory(
         FakeWeb3(
             FakeEth(
@@ -254,7 +315,7 @@ def _graph(events: list[str], signer: FakeSigner, *, allowance: int) -> Any:
     )
     return build_swap_transaction_graph(
         SwapGraphDependencies(
-            router=SwapRouter([FakeSwapProvider(events)]),
+            router=SwapRouter([swap_provider_cls(events)]),
             provider_factory=factory,
             address_resolver=signer,
         ),
@@ -296,12 +357,18 @@ def _cow_graph(events: list[str], signer: FakeSigner, *, allowance: int) -> Any:
     ).compile()
 
 
-def _swap_payload(idempotency_key: str, *, provider: str = "lifi") -> dict[str, object]:
+def _swap_payload(
+    idempotency_key: str,
+    *,
+    provider: str = "lifi",
+    from_token_native: bool = False,
+) -> dict[str, object]:
+    from_tok = normalize_evm_address(ZERO_ADDRESS) if from_token_native else TOKEN_IN
     return {
         "kind": "swap",
         "chain": "base",
         "wallet_id": "primary",
-        "from_token": TOKEN_IN,
+        "from_token": from_tok,
         "to_token": TOKEN_OUT,
         "amount_in": "1.5",
         "max_slippage_bps": 50,

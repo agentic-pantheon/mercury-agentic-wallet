@@ -62,6 +62,7 @@ class MercuryHttpLoggingMiddleware(BaseHTTPMiddleware):
         client = request.client
         log_service_event(
             "http_request",
+            summary=f"Incoming HTTP {request.method} {request.url.path}",
             request_id=header_request_id,
             method=request.method,
             path=request.url.path,
@@ -85,6 +86,10 @@ class MercuryHttpLoggingMiddleware(BaseHTTPMiddleware):
             response_body_logged = True
             log_service_event(
                 "http_response",
+                summary=(
+                    f"HTTP {request.method} {request.url.path} -> {response.status_code} "
+                    f"in {duration_ms}ms (body logged)"
+                ),
                 request_id=state_request_id or header_request_id,
                 method=request.method,
                 path=request.url.path,
@@ -104,6 +109,10 @@ class MercuryHttpLoggingMiddleware(BaseHTTPMiddleware):
 
         log_service_event(
             "http_response",
+            summary=(
+                f"HTTP {request.method} {request.url.path} -> {response.status_code} "
+                f"in {duration_ms}ms"
+            ),
             request_id=state_request_id or header_request_id,
             method=request.method,
             path=request.url.path,
