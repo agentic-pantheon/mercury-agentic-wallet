@@ -161,6 +161,8 @@ def create_erc20_tools(provider_factory: ProviderFactoryLike) -> list[BaseTool]:
 
 
 def _optional_text_call(contract: Any, function_name: str) -> str | None:
+    """Decode ``name()`` / ``symbol()`` when present; any RPC/ABI mismatch returns ``None``."""
+
     try:
         value = _call_contract_function(contract, function_name, [])
     except Exception:

@@ -1,4 +1,4 @@
-"""Policy decision placeholders."""
+"""Policy outcomes for swaps and transaction risk evaluation."""
 
 from enum import StrEnum
 
@@ -14,7 +14,7 @@ class PolicyDecisionStatus(StrEnum):
 
 
 class PolicyDecision(BaseModel):
-    """Policy result placeholder for later safety layers."""
+    """Allow, needs-human-approval, or reject verdict from swap or transaction policy."""
 
     model_config = ConfigDict(frozen=True)
 

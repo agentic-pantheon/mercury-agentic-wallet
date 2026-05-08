@@ -6,15 +6,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import ValidationError
-
+from mercury.graph.preparation_helpers import state_for_preparation_error
 from mercury.graph.request_metadata import merge_intent_metadata_into_prepared
 from mercury.graph.state import MercuryState
 from mercury.models.erc20 import (
     ERC20ApprovalIntent,
     ERC20TransferIntent,
 )
-from mercury.models.errors import normalize_exception, validation_failed_from_pydantic
 from mercury.tools.erc20_transactions import (
     PublicAddressResolver,
     prepare_erc20_approval,
@@ -68,14 +66,8 @@ def make_erc20_prepare_node(deps: ERC20GraphDependencies) -> Callable[[MercurySt
                 )
             else:
                 raise ValueError(f"Unsupported ERC20 transaction intent: {kind}.")
-        except ValidationError as exc:
-            return {
-                "error": validation_failed_from_pydantic(
-                    exc, stage="prepare_erc20_transaction"
-                )
-            }
         except Exception as exc:
-            return {"error": normalize_exception(exc, stage="prepare_erc20_transaction")}
+            return state_for_preparation_error(exc, stage="prepare_erc20_transaction")
 
         prepared = merge_intent_metadata_into_prepared(prepared, payload)
         return {

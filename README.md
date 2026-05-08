@@ -194,6 +194,23 @@ generic EVM transaction workflow:
 The pipeline is dependency-injected and fakeable. Tests assert that signing cannot
 happen before policy, approval, and idempotency gates.
 
+**Idempotency store:** `mercury/policy/idempotency.InMemoryIdempotencyStore` is
+in-memory and **process-local**. It correctly deduplicates within one Python
+process; multiple Uvicorn workers or horizontally scaled replicas do **not** share
+state, so substitute a distributed store for production if workers or pods can
+handle the same keys. Failed signing or broadcast (no transaction submitted yet)
+clears the in-flight reservation so clients can safely retry with the same key; after
+broadcast, outcomes are recorded so replays return the same result instead of
+submitting again.
+
+**Default approver:** [`TransactionGraphDependencies`](mercury/graph/nodes_transaction.py)
+defaults to [`PlaceholderTransactionApprover`](mercury/tools/transactions.py), which
+always surfaces an approval-required outcome for value-moving flows. The Mercury HTTP
+runtime ([`mercury/service/dependencies.py`](mercury/service/dependencies.py))
+injects [`RequestMetadataTransactionApprover`](mercury/tools/transactions.py) so
+hosted requests can carry explicit approval metadata; custom embedders must supply
+their own `approver` when building `TransactionGraphDependencies`.
+
 ### Policy
 
 `mercury/policy/risk.py`, `mercury/policy/rules.py`, and
@@ -555,6 +572,7 @@ can attempt a connection.
 
 ## Current Limitations
 
+- `IntentKind.PREPARE_TRANSACTION` maps to [`PlaceholderTransactionIntent`](mercury/models/intents.py): a typed placeholder for future planner work, not executed by the graphs in this repository.
 - Provider adapters are tested against mocked API shapes; live LiFi, CoW Swap, and
   Uniswap schemas may need small normalization updates.
 - CoW Swap typed orders are normalized but not automatically submitted.

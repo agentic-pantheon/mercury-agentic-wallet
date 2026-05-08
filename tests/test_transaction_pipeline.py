@@ -14,12 +14,85 @@ from mercury.models.policy import PolicyDecision
 from mercury.models.signing import SignTransactionRequest
 from mercury.models.simulation import SimulationResult, SimulationStatus
 from mercury.models.wallets import WalletAddressResult
-from mercury.policy.idempotency import InMemoryIdempotencyStore
+from mercury.policy.idempotency import IdempotencyStatus, InMemoryIdempotencyStore
 from mercury.policy.risk import TransactionPolicyEngine
 
 PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111"
 WALLET_ADDRESS = "0x000000000000000000000000000000000000bEEF"
 RECIPIENT = "0x000000000000000000000000000000000000dEaD"
+
+
+def test_signing_failure_releases_idempotency_for_retry() -> None:
+    events: list[str] = []
+    store = InMemoryIdempotencyStore()
+    signer = FakeSigner(events, sign_exception=RuntimeError("sign boom"))
+    graph = build_transaction_graph(
+        TransactionGraphDependencies(
+            backend=FakeBackend(events),
+            signer=signer,
+            policy_engine=RecordingPolicyEngine(events),
+            approver=FakeApprover(events, approved=True),
+            idempotency_store=store,
+        )
+    ).compile()
+
+    result = graph.invoke({"raw_input": _prepared_transaction()})
+
+    assert result["execution_result"].status == ExecutionStatus.FAILED
+    assert store.get("phase-6") is None
+
+    signer.sign_exception = None
+    retry = graph.invoke({"raw_input": _prepared_transaction()})
+    assert retry["execution_result"].status == ExecutionStatus.CONFIRMED
+    assert signer.sign_calls == 2
+
+
+def test_broadcast_failure_releases_idempotency_for_retry() -> None:
+    events: list[str] = []
+    store = InMemoryIdempotencyStore()
+    backend = FakeBackend(events, broadcast_exception=RuntimeError("broadcast boom"))
+    graph = build_transaction_graph(
+        TransactionGraphDependencies(
+            backend=backend,
+            signer=FakeSigner(events),
+            policy_engine=RecordingPolicyEngine(events),
+            approver=FakeApprover(events, approved=True),
+            idempotency_store=store,
+        )
+    ).compile()
+
+    result = graph.invoke({"raw_input": _prepared_transaction()})
+    assert result["execution_result"].status == ExecutionStatus.FAILED
+    assert store.get("phase-6") is None
+
+    backend.broadcast_exception = None
+    retry = graph.invoke({"raw_input": _prepared_transaction()})
+    assert retry["execution_result"].status == ExecutionStatus.CONFIRMED
+
+
+def test_monitor_failure_after_broadcast_records_completed_idempotency() -> None:
+    events: list[str] = []
+    store = InMemoryIdempotencyStore()
+    backend = FakeBackend(events, monitor_exception=RuntimeError("monitor boom"))
+    graph = build_transaction_graph(
+        TransactionGraphDependencies(
+            backend=backend,
+            signer=FakeSigner(events),
+            policy_engine=RecordingPolicyEngine(events),
+            approver=FakeApprover(events, approved=True),
+            idempotency_store=store,
+        )
+    ).compile()
+
+    graph.invoke({"raw_input": _prepared_transaction()})
+    record = store.get("phase-6")
+    assert record is not None
+    assert record.status == IdempotencyStatus.COMPLETED
+    assert record.result is not None
+    assert record.result.status == ExecutionStatus.FAILED
+
+    retry = graph.invoke({"raw_input": _prepared_transaction()})
+    assert retry["execution_result"] == record.result
 
 
 def test_transaction_graph_orders_approval_before_sign_and_broadcast() -> None:
@@ -154,9 +227,15 @@ class RecordingPolicyEngine(TransactionPolicyEngine):
 
 
 class FakeSigner:
-    def __init__(self, events: list[str]) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        sign_exception: BaseException | None = None,
+    ) -> None:
         self._events = events
         self.sign_calls = 0
+        self.sign_exception = sign_exception
         self._private_key = PRIVATE_KEY
 
     def get_wallet_address(self, wallet_id: str) -> WalletAddressResult:
@@ -166,6 +245,8 @@ class FakeSigner:
     def sign_transaction(self, request: SignTransactionRequest) -> SignedTransactionResult:
         self._events.append("sign")
         self.sign_calls += 1
+        if self.sign_exception is not None:
+            raise self.sign_exception
         assert request.prepared_transaction.transaction["to"] == RECIPIENT
         return SignedTransactionResult(
             wallet_id=request.wallet.wallet_id,
@@ -194,9 +275,18 @@ class FakeApprover:
 
 
 class FakeBackend:
-    def __init__(self, events: list[str], *, simulation_passed: bool = True) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        simulation_passed: bool = True,
+        broadcast_exception: BaseException | None = None,
+        monitor_exception: BaseException | None = None,
+    ) -> None:
         self._events = events
         self._simulation_passed = simulation_passed
+        self.broadcast_exception = broadcast_exception
+        self.monitor_exception = monitor_exception
 
     def resolve_chain_id(self, transaction: PreparedTransaction) -> int:
         return 1
@@ -219,6 +309,8 @@ class FakeBackend:
     def broadcast(self, signed_transaction: SignedTransactionResult) -> str:
         self._events.append("broadcast")
         assert signed_transaction.raw_transaction_hex == "0x02"
+        if self.broadcast_exception is not None:
+            raise self.broadcast_exception
         return "0xbeef"
 
     def wait_for_receipt(
@@ -231,6 +323,8 @@ class FakeBackend:
     ) -> TransactionReceipt:
         self._events.append("monitor")
         assert tx_hash == "0xbeef"
+        if self.monitor_exception is not None:
+            raise self.monitor_exception
         return TransactionReceipt(
             tx_hash=tx_hash,
             status=ExecutionStatus.CONFIRMED,

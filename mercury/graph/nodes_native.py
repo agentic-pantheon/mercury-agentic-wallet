@@ -6,11 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import ValidationError
-
+from mercury.graph.preparation_helpers import state_for_preparation_error
 from mercury.graph.request_metadata import merge_intent_metadata_into_prepared
 from mercury.graph.state import MercuryState
-from mercury.models.errors import normalize_exception, validation_failed_from_pydantic
 from mercury.models.native_tx import NativeTransferIntent
 from mercury.tools.erc20_transactions import PublicAddressResolver
 from mercury.tools.native_transactions import prepare_native_transfer
@@ -40,14 +38,8 @@ def make_native_prepare_node(
                 address_resolver=deps.address_resolver,
                 idempotency_key=intent.idempotency_key,
             )
-        except ValidationError as exc:
-            return {
-                "error": validation_failed_from_pydantic(
-                    exc, stage="prepare_native_transaction"
-                )
-            }
         except Exception as exc:
-            return {"error": normalize_exception(exc, stage="prepare_native_transaction")}
+            return state_for_preparation_error(exc, stage="prepare_native_transaction")
 
         prepared = merge_intent_metadata_into_prepared(prepared, payload)
         return {
