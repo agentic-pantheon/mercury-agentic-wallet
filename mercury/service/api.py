@@ -19,7 +19,6 @@ from mercury.service.errors import DependencyUnavailableError, install_exception
 from mercury.service.http_logging import MercuryHttpLoggingMiddleware
 from mercury.service.logging import (
     configure_service_logging,
-    log_service_event,
     parse_mercury_log_level,
 )
 from mercury.service.models import (
