@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -17,11 +16,12 @@ def log_graph_event(
     event: str,
     *,
     level: int = logging.INFO,
+    summary: str | None = None,
     **fields: Any,
 ) -> None:
-    """Emit a single structured JSON line from the graph logger (redacted)."""
+    """Emit ``mercury graph:<event> | <summary> | {<json>}``."""
 
-    from mercury.service.logging import redact_value
+    from mercury.service.logging import format_mercury_log_line
 
-    payload = {"event": event, **redact_value(fields)}
-    get_graph_logger().log(level, json.dumps(payload, sort_keys=True, default=str))
+    message = format_mercury_log_line(scope="graph", event=event, fields=fields, summary=summary)
+    get_graph_logger().log(level, message)

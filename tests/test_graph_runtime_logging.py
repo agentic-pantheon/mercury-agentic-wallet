@@ -73,8 +73,19 @@ def _strip_ansi(message: str) -> str:
 
 
 def _loads_json_maybe(raw: str) -> dict[str, object] | str:
+    text = raw.strip()
+    if " | " in text:
+        _, maybe_json = text.rsplit(" | ", 1)
+        maybe_json = maybe_json.strip()
+        if maybe_json.startswith("{"):
+            try:
+                out = json.loads(maybe_json)
+                if isinstance(out, dict):
+                    return out
+            except json.JSONDecodeError:
+                pass
     try:
-        out = json.loads(raw)
+        out = json.loads(text)
         if isinstance(out, dict):
             return out
     except json.JSONDecodeError:
