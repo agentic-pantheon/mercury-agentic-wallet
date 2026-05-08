@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mercury.models.addresses import normalize_evm_address
+from mercury.models.native_tokens import normalize_swap_input_from_token
 from mercury.models.transactions import HexData
 
 BasisPoints = Annotated[int, Field(ge=0, le=10_000)]
@@ -38,7 +39,7 @@ class SwapExecutionType(StrEnum):
 
 
 class SwapIntent(BaseModel):
-    """User intent to swap one ERC20 token for another."""
+    """User intent to swap tokens; *from_token* may use a native sentinel."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -70,7 +71,12 @@ class SwapIntent(BaseModel):
             return None
         return value.strip().lower()
 
-    @field_validator("from_token", "to_token", "recipient_address")
+    @field_validator("from_token")
+    @classmethod
+    def normalize_from_token(cls, value: str) -> str:
+        return normalize_swap_input_from_token(value)
+
+    @field_validator("to_token", "recipient_address")
     @classmethod
     def normalize_address(cls, value: str | None) -> str | None:
         if value is None:
@@ -129,7 +135,12 @@ class SwapQuoteRequest(BaseModel):
             return None
         return value.strip().lower()
 
-    @field_validator("wallet_address", "from_token", "to_token", "recipient_address")
+    @field_validator("from_token")
+    @classmethod
+    def normalize_from_token(cls, value: str) -> str:
+        return normalize_swap_input_from_token(value)
+
+    @field_validator("wallet_address", "to_token", "recipient_address")
     @classmethod
     def normalize_address(cls, value: str | None) -> str | None:
         if value is None:

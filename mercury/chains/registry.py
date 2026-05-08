@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mercury.config import MercurySettings, get_settings
+from mercury.known_addresses.book import KnownAddressMissingError, lookup_address
 from mercury.models.chain import ChainConfig
 
 DEFAULT_CHAIN_NAME = "ethereum"
@@ -10,6 +11,13 @@ DEFAULT_CHAIN_NAME = "ethereum"
 
 class UnsupportedChainError(ValueError):
     """Raised when a chain is not supported by Mercury."""
+
+
+def _wrapped_native_token_address(chain_name: str) -> str | None:
+    try:
+        return lookup_address(chain_name, "token", "WETH")
+    except KnownAddressMissingError:
+        return None
 
 
 def _chain_configs(settings: MercurySettings | None = None) -> tuple[ChainConfig, ...]:
@@ -23,6 +31,7 @@ def _chain_configs(settings: MercurySettings | None = None) -> tuple[ChainConfig
             native_symbol="ETH",
             rpc_secret_path=s.ethereum_rpc_secret_path,
             block_explorer_url="https://etherscan.io",
+            wrapped_native_token_address=_wrapped_native_token_address("ethereum"),
         ),
         ChainConfig(
             name="base",
@@ -30,6 +39,7 @@ def _chain_configs(settings: MercurySettings | None = None) -> tuple[ChainConfig
             native_symbol="ETH",
             rpc_secret_path=s.base_rpc_secret_path,
             block_explorer_url="https://basescan.org",
+            wrapped_native_token_address=_wrapped_native_token_address("base"),
         ),
         ChainConfig(
             name="arbitrum",
@@ -37,6 +47,7 @@ def _chain_configs(settings: MercurySettings | None = None) -> tuple[ChainConfig
             native_symbol="ETH",
             rpc_secret_path=s.arbitrum_rpc_secret_path,
             block_explorer_url="https://arbiscan.org",
+            wrapped_native_token_address=_wrapped_native_token_address("arbitrum"),
         ),
         ChainConfig(
             name="optimism",
@@ -44,6 +55,7 @@ def _chain_configs(settings: MercurySettings | None = None) -> tuple[ChainConfig
             native_symbol="ETH",
             rpc_secret_path=s.optimism_rpc_secret_path,
             block_explorer_url="https://optimistic.etherscan.io",
+            wrapped_native_token_address=_wrapped_native_token_address("optimism"),
         ),
         ChainConfig(
             name="monad",
@@ -51,6 +63,7 @@ def _chain_configs(settings: MercurySettings | None = None) -> tuple[ChainConfig
             native_symbol="MON",
             rpc_secret_path=s.monad_rpc_secret_path,
             block_explorer_url="https://monadvision.com",
+            wrapped_native_token_address=_wrapped_native_token_address("monad"),
         ),
     )
 

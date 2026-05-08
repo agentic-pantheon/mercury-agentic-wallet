@@ -5,6 +5,7 @@ from mercury.chains import (
     get_chain_by_name,
     get_default_chain,
 )
+from mercury.known_addresses.book import lookup_address
 
 
 def test_resolves_ethereum_by_name() -> None:
@@ -51,3 +52,16 @@ def test_unsupported_chain_raises_clear_error() -> None:
 
 def test_default_chain_is_ethereum() -> None:
     assert get_default_chain().name == "ethereum"
+
+
+@pytest.mark.parametrize(
+    "chain_name",
+    ("ethereum", "base", "arbitrum", "optimism"),
+)
+def test_wrapped_native_matches_known_weth(chain_name: str) -> None:
+    chain = get_chain_by_name(chain_name)
+    assert chain.wrapped_native_token_address == lookup_address(chain_name, "token", "WETH")
+
+
+def test_monad_wrapped_native_unknown() -> None:
+    assert get_chain_by_name("monad").wrapped_native_token_address is None
