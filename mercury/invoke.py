@@ -203,7 +203,7 @@ def invoke_response_from_state(
     request_id: str,
     fallback_chain: str | None,
 ) -> MercuryInvokeResponse:
-    """Map final graph state to ``MercuryInvokeResponse`` (shared with pan-agentikit envelopes)."""
+    """Map final graph state to ``MercuryInvokeResponse``."""
 
     return _response_from_state(state, request_id=request_id, fallback_chain=fallback_chain)
 

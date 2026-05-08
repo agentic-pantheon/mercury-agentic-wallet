@@ -493,14 +493,6 @@ Success is **HTTP 200** with a **`MercuryInvokeResponse`**: `request_id`, `statu
 
 ---
 
-## Pan-agentikit envelope API (optional)
-
-For coordinator ↔ Mercury with **envelopes**, use **`POST /v1/agent`** with a `PanAgentEnvelope` body. Inbound payloads support `user_message` and `task_request`; value-moving work should use **`task_request`** with a structured `intent` / `input`, not plain `user_message` alone for transfers.
-
-See the repository **README** and `mercury/service/pan_agentikit_models.py` for payload shapes.
-
----
-
 ## cURL template (invoke)
 
 ```bash

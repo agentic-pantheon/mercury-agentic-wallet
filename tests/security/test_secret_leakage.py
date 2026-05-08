@@ -17,7 +17,6 @@ from mercury.service.logging import log_service_event
 from tests.fakes.secret_store import TEST_ONECLAW_API_KEY, TEST_PRIVATE_KEY, TEST_RPC_URL
 from tests.fakes.signer import RecordingSigner
 from tests.fakes.transactions import RecordingApprover, RecordingTransactionBackend
-from tests.fixtures.pan_agentikit_envelopes import envelope_fixture
 
 WALLET = "0x000000000000000000000000000000000000bEEF"
 RECIPIENT = "0x000000000000000000000000000000000000dEaD"
@@ -86,30 +85,37 @@ def test_native_service_redacts_secrets_from_response_payload_and_logs(caplog: A
     assert_no_secret_values(caplog.text)
 
 
-def test_pan_agentikit_route_redacts_malicious_payload_and_graph_errors() -> None:
+def test_native_invoke_route_redacts_malicious_payload_and_graph_errors() -> None:
     runtime = RaisingRuntime(
         RuntimeError(
             f"boom {TEST_RPC_URL} bearer={TEST_ONECLAW_API_KEY} mercury/wallets/primary/private_key"
         )
     )
     client = TestClient(create_app(runtime=runtime), raise_server_exceptions=False)
-    envelope = envelope_fixture("task_request")
-    envelope["metadata"] = {
-        "api_key": TEST_ONECLAW_API_KEY,
-        "debug": f"using {TEST_RPC_URL}",
-    }
 
-    response = client.post("/v1/agent", json=envelope)
+    response = client.post(
+        "/v1/mercury/invoke",
+        json={
+            "request_id": "req-graph-error-redaction",
+            "user_id": "user-1",
+            "wallet_id": "primary",
+            "chain": "base",
+            "intent": {"kind": "native_balance"},
+            "metadata": {
+                "api_key": TEST_ONECLAW_API_KEY,
+                "debug": f"using {TEST_RPC_URL}",
+            },
+        },
+    )
 
-    assert response.status_code == 200
+    assert response.status_code == 500
     assert_no_secret_values(response.text)
     payload = response.json()
-    assert payload["payload"]["kind"] == "agent_error"
-    assert payload["payload"]["code"] == "graph_invocation_failed"
-    assert payload["payload"]["category"] == "internal"
-    assert payload["payload"]["llm_action"]
+    assert payload["status"] == "error"
     assert payload["error"]["code"] == "graph_invocation_failed"
-    assert_no_secret_values(payload["payload"]["llm_action"])
+    assert payload["error"]["category"] == "internal"
+    assert payload["error"]["llm_action"]
+    assert_no_secret_values(payload["error"]["llm_action"])
     assert payload["error"]["message"].count("<redacted>") >= 2
 
 
