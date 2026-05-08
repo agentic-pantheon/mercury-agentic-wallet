@@ -279,7 +279,7 @@ tests/
 
 ## Local Development
 
-Mercury uses Python 3.12 and `uv`.
+Mercury supports Python 3.12 or 3.13 and uses `uv`.
 
 ```bash
 uv sync
