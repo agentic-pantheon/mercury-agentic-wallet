@@ -103,14 +103,14 @@ def test_local_run_turn_body_idempotency_not_overwritten() -> None:
 
 def test_fetch_get_text_invoke_guide() -> None:
     runner = LocalMercuryAssistantRunner(_FakeRuntime({}))  # type: ignore[arg-type]
-    md = runner.fetch_get_text("/v1/mercury/invoke/guide")
+    md = runner.fetch_get_text("/mercury/invoke-guide")
     assert md == get_invoke_guide_markdown()
 
 
 def test_fetch_get_text_unsupported_path_is_deterministic() -> None:
     runner = LocalMercuryAssistantRunner(_FakeRuntime({}))  # type: ignore[arg-type]
     assert runner.fetch_get_text("/v1/other") == "(Local guide unavailable: unsupported path /v1/other)"
-    assert runner.fetch_get_text("v1/mercury/invoke/guide") == get_invoke_guide_markdown()
+    assert runner.fetch_get_text("mercury/invoke-guide") == get_invoke_guide_markdown()
 
 
 @pytest.mark.asyncio

@@ -1,21 +1,18 @@
-"""HTTP and in-process runners for Mercury invoke (Juno specialist tool)."""
+"""In-process runner for Mercury invoke (Juno specialist tool)."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-import httpx
 from pydantic import ValidationError
 
 from mercury.graph.runtime import GraphRuntime
 from mercury.invoke import get_invoke_guide_markdown, invoke_mercury
 from mercury.juno.assistant_turn import (
     AssistantTurnAgentError,
-    AssistantTurnHttpError,
     AssistantTurnResult,
     parse_mercury_body,
 )
@@ -24,7 +21,7 @@ from mercury.service.models import MercuryInvokeRequest, MercuryInvokeResponse
 
 logger = logging.getLogger(__name__)
 
-_LOCAL_INVOKE_GUIDE_PATH = "/v1/mercury/invoke/guide"
+_LOCAL_INVOKE_GUIDE_PATH = "/mercury/invoke-guide"
 
 
 @runtime_checkable
@@ -39,64 +36,6 @@ class MercuryAssistantRunnerLike(Protocol):
         *,
         idempotency_key: str | None = None,
     ) -> AssistantTurnResult: ...
-
-
-def _response_to_result(response: httpx.Response) -> AssistantTurnResult:
-    if response.status_code >= 400:
-        return _map_http_error(response)
-    try:
-        data = response.json()
-    except json.JSONDecodeError:
-        return AssistantTurnAgentError(
-            message="Response body was not valid JSON",
-            code="invalid_json",
-            details={"body_snippet": _body_snippet(response.text)},
-        )
-    if not isinstance(data, dict):
-        return AssistantTurnAgentError(
-            message="Mercury JSON root must be an object",
-            code="invalid_shape",
-            details={"got_type": type(data).__name__},
-        )
-    return parse_mercury_body(data)
-
-
-def _json_body_for_request(
-    payload: dict[str, Any],
-    *,
-    idempotency_key: str | None,
-    request_body_mode: Literal["flat", "nested_input"],
-) -> dict[str, Any]:
-    inner = dict(payload)
-    if idempotency_key is not None:
-        inner.setdefault("idempotency_key", idempotency_key)
-    if request_body_mode == "flat":
-        return inner
-    return {"input": inner}
-
-
-def _headers(*, idempotency_key: str | None, x_request_id: str | None) -> dict[str, str]:
-    h: dict[str, str] = {"Content-Type": "application/json"}
-    if idempotency_key is not None:
-        h["Idempotency-Key"] = idempotency_key
-    if x_request_id:
-        h["X-Request-ID"] = x_request_id
-    return h
-
-
-def _body_snippet(text: str, max_len: int = 2000) -> str:
-    text = text.strip()
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "…"
-
-
-def _map_http_error(response: httpx.Response) -> AssistantTurnHttpError:
-    return AssistantTurnHttpError(
-        status_code=response.status_code,
-        body_snippet=_body_snippet(response.text),
-        message=f"Mercury returned HTTP {response.status_code}",
-    )
 
 
 def _local_response_to_result(response: MercuryInvokeResponse) -> AssistantTurnResult:
@@ -116,85 +55,6 @@ def _local_response_to_result(response: MercuryInvokeResponse) -> AssistantTurnR
         msg = raw.get("message") or "Mercury request failed"
         return AssistantTurnAgentError(message=str(msg), code=str(status))
     return parse_mercury_body(raw)
-
-
-class MercuryAssistantRunner:
-    """Sync/async runner for Mercury HTTP (configurable path and body shape)."""
-
-    def __init__(
-        self,
-        base_url: str,
-        *,
-        timeout_s: float = 60.0,
-        transport: httpx.BaseTransport | None = None,
-        http_path: str = "/v1/mercury/invoke",
-        request_body_mode: Literal["flat", "nested_input"] = "flat",
-        send_x_request_id: bool = True,
-    ) -> None:
-        self.base_url = base_url.rstrip("/")
-        path = http_path.strip()
-        if not path.startswith("/"):
-            path = "/" + path
-        self._http_path = path
-        self._request_body_mode = request_body_mode
-        self._send_x_request_id = send_x_request_id
-        self.timeout_s = timeout_s
-        self._transport = transport
-
-    def fetch_get_text(self, relative_path: str) -> str:
-        path = relative_path.strip()
-        if not path.startswith("/"):
-            path = "/" + path
-        url = f"{self.base_url}{path}"
-        with httpx.Client(timeout=self.timeout_s, transport=self._transport) as client:
-            response = client.get(url)
-        if response.status_code >= 400:
-            return f"(Remote guide unavailable: HTTP {response.status_code})"
-        return response.text
-
-    def run_turn(
-        self,
-        payload: dict[str, Any],
-        *,
-        idempotency_key: str | None = None,
-    ) -> AssistantTurnResult:
-        return self._execute_sync_turn(payload, idempotency_key=idempotency_key)
-
-    def _execute_sync_turn(
-        self,
-        payload: dict[str, Any],
-        *,
-        idempotency_key: str | None,
-    ) -> AssistantTurnResult:
-        url = f"{self.base_url}{self._http_path}"
-        body = _json_body_for_request(
-            payload,
-            idempotency_key=idempotency_key,
-            request_body_mode=self._request_body_mode,
-        )
-        rid = str(uuid.uuid4()) if self._send_x_request_id else None
-        headers = _headers(idempotency_key=idempotency_key, x_request_id=rid)
-        with httpx.Client(timeout=self.timeout_s, transport=self._transport) as client:
-            response = client.post(url, json=body, headers=headers)
-        return _response_to_result(response)
-
-    async def arun_turn(
-        self,
-        payload: dict[str, Any],
-        *,
-        idempotency_key: str | None = None,
-    ) -> AssistantTurnResult:
-        url = f"{self.base_url}{self._http_path}"
-        body = _json_body_for_request(
-            payload,
-            idempotency_key=idempotency_key,
-            request_body_mode=self._request_body_mode,
-        )
-        rid = str(uuid.uuid4()) if self._send_x_request_id else None
-        headers = _headers(idempotency_key=idempotency_key, x_request_id=rid)
-        async with httpx.AsyncClient(timeout=self.timeout_s, transport=self._transport) as client:
-            response = await client.post(url, json=body, headers=headers)
-        return _response_to_result(response)
 
 
 class LocalMercuryAssistantRunner:
@@ -274,4 +134,4 @@ class LocalMercuryAssistantRunner:
         return await asyncio.to_thread(self.run_turn, payload, idempotency_key=idempotency_key)
 
 
-__all__ = ["LocalMercuryAssistantRunner", "MercuryAssistantRunner", "MercuryAssistantRunnerLike"]
+__all__ = ["LocalMercuryAssistantRunner", "MercuryAssistantRunnerLike"]

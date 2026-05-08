@@ -1,8 +1,8 @@
 # Mercury: agent integration guide
 
-Mercury is an HTTP wallet and policy service: it resolves structured **intents**, runs simulations and **policy**, requests **human approval** when required, then **signs** (via custody, e.g. 1Claw) and **broadcasts** EVM transactions.
+Mercury is a wallet and policy service: it resolves structured **intents**, runs simulations and **policy**, requests **human approval** when required, then **signs** (via custody, e.g. 1Claw) and **broadcasts** EVM transactions.
 
-This document focuses on `**POST /v1/mercury/invoke`**, the native JSON API for coordinators and autonomous agents.
+This document describes the **`MercuryInvokeRequest` / `MercuryInvokeResponse`** contract used by in-process invocation (`mercury.invoke.invoke_mercury`) and the Juno Mercury specialist.
 
 ---
 
@@ -12,7 +12,7 @@ This document focuses on `**POST /v1/mercury/invoke`**, the native JSON API for 
 | Resource                              | URL                                          |
 | ------------------------------------- | -------------------------------------------- |
 | **OpenAPI (JSON)**                    | `GET /openapi.json`                          |
-| **This guide (Markdown)**             | `GET /v1/mercury/invoke/guide`               |
+| **This guide (Markdown)**             | Bundled: `mercury.invoke.get_invoke_guide_markdown()` |
 | **Health**                            | `GET /healthz`                               |
 | **Readiness + supported chains**      | `GET /readyz`                                |
 | **Alchemy Notify (Address Activity)** | `POST /v1/webhooks/alchemy/address-activity` |
@@ -58,7 +58,7 @@ Detailed JSON examples appear in the sections [Example: token prices](#example-t
 
 ## Alchemy Address Activity webhooks (push)
 
-Mercury exposes `**POST /v1/webhooks/alchemy/address-activity`** for [Alchemy Notify Address Activity](https://www.alchemy.com/docs/reference/address-activity-webhook) deliveries. This path is **separate** from `POST /v1/mercury/invoke`: it verifies `**X-Alchemy-Signature`** with **HMAC-SHA256** over the **raw** request body using the webhook signing key, then runs a **small dedicated LangGraph** (normalize → optional incoming filter → in-memory dedupe → structured log/response).
+Mercury exposes `**POST /v1/webhooks/alchemy/address-activity`** for [Alchemy Notify Address Activity](https://www.alchemy.com/docs/reference/address-activity-webhook) deliveries. This path is **separate** from graph **invoke**: it verifies `**X-Alchemy-Signature`** with **HMAC-SHA256** over the **raw** request body using the webhook signing key, then runs a **small dedicated LangGraph** (normalize → optional incoming filter → in-memory dedupe → structured log/response).
 
 **1Claw:** store the signing key at `MERCURY_ALCHEMY_WEBHOOK_SIGNING_KEY_SECRET_PATH` (default `mercury/apis/alchemy_webhook_signing_key`). This is **not** the same secret as the REST Alchemy API key (`mercury/apis/alchemy`).
 
@@ -160,7 +160,7 @@ If a name cannot be resolved or has no address for the requested chain, `invoke`
 
 ---
 
-## `POST /v1/mercury/invoke`
+## Mercury invocation (`MercuryInvokeRequest`)
 
 **Content-Type:** `application/json`
 
@@ -175,7 +175,7 @@ If a name cannot be resolved or has no address for the requested chain, `invoke`
 
 ### Request body: `MercuryInvokeRequest`
 
-Top-level fields (unknown top-level keys are **rejected** with HTTP 422):
+Top-level fields (unknown top-level keys cause **validation errors** on `MercuryInvokeRequest`):
 
 
 | Field               | Required                     | Notes                                                                                    |
@@ -569,23 +569,30 @@ ERC-20 allowance and approval behavior on the **source** chain is the same as fo
 
 ## Responses
 
-Success is **HTTP 200** with a `**MercuryInvokeResponse`**: `request_id`, `status`, `message`, optional `data`, `tx_hash`, `receipt`, `approval_required`, `approval_payload`, `error`.
+On success, `MercuryInvokeResponse` carries `request_id`, `status`, `message`, optional `data`, `tx_hash`, `receipt`, `approval_required`, `approval_payload`, `error`.
 
 - `**message**` — human-oriented summary. For `**portfolio_tokens**`, token amounts in the summary are **decimal** (not raw hex); structured rows still carry `**balance`** and `**balance_display**` as described [above](#example-portfolio-tokens-by-wallet-read-only-alchemy).
 - `**approval_required` / `approval_denied**` — treat as “not signed yet”; retry with `[approval_response](#approval-for-value-moving-transactions)` when appropriate.
 - `**rejected**` / policy — e.g. missing idempotency key, simulation failure, policy rule.
-- **HTTP 422** — JSON failed Pydantic validation (wrong fields, extra top-level keys on `MercuryInvokeRequest`).
+- **Validation** — JSON failed Pydantic validation (wrong fields, extra top-level keys on `MercuryInvokeRequest`).
 
 ---
 
-## cURL template (invoke)
+## Python (in-process invoke)
 
-```bash
-curl -sS -X POST "http://127.0.0.1:8000/v1/mercury/invoke" \
-  -H "Content-Type: application/json" \
-  -H "X-Request-ID: my-req-1" \
-  -H "Idempotency-Key: my-idem-1" \
-  -d @body.json
+```python
+from mercury.invoke import invoke_mercury
+from mercury.service.models import MercuryInvokeRequest
+from mercury.service.dependencies import build_standalone_graph_runtime
+
+runtime = build_standalone_graph_runtime()
+payload = MercuryInvokeRequest(
+    user_id="user-1",
+    wallet_id="primary",
+    chain="base",
+    intent={"kind": "native_balance", "wallet_address": "0x…"},
+)
+response = invoke_mercury(runtime, payload, x_request_id="my-req-1", idempotency_key="my-idem-1")
 ```
 
 ---

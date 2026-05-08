@@ -1,22 +1,31 @@
-"""Sanitization / HTTP wiring for mercury_invoke (Mercury Juno specialist tool)."""
+"""Sanitization and local-runner wiring for mercury_invoke (Mercury Juno specialist tool)."""
 
 from __future__ import annotations
 
 import json
 import uuid
 
-import httpx
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 
+from mercury.graph.state import MercuryState
 from mercury.juno.manifest import JunoAssistantManifest
-from mercury.juno.runners import MercuryAssistantRunner
+from mercury.juno.runners import LocalMercuryAssistantRunner
 from mercury.juno.subagent import _sanitize_intent_for_mercury_post, build_mercury_juno_subagent
 
 
 class _FakeWithTools(FakeMessagesListChatModel):
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):  # type: ignore[no-untyped-def]
         return self
+
+
+class _CapturingRuntime:
+    def __init__(self) -> None:
+        self.invocations: list[MercuryState] = []
+
+    def invoke(self, state: MercuryState) -> MercuryState:
+        self.invocations.append(state)
+        return {"response_text": "ok", "chain_name": "base"}
 
 
 def _cfg() -> dict:
@@ -43,24 +52,9 @@ def test_sanitize_no_idempotency() -> None:
     assert "idempotency_key" not in cleaned
 
 
-def test_mercury_invoke_sends_root_idempotency_and_header() -> None:
-    captured: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        body = json.loads(request.content.decode())
-        assert body.get("idempotency_key") == "transfer-usdc-1"
-        assert body["intent"]["idempotency_key"] == "transfer-usdc-1"
-        assert "approval_response" not in body["intent"]
-        assert request.headers.get("Idempotency-Key") == "transfer-usdc-1"
-        return httpx.Response(200, json={"agent_reply": "ok"})
-
-    runner = MercuryAssistantRunner(
-        "https://mercury.test",
-        transport=httpx.MockTransport(handler),
-        http_path="/v1/mercury/invoke",
-        request_body_mode="flat",
-    )
+def test_mercury_invoke_merges_idempotency_and_strips_nested_approval() -> None:
+    rt = _CapturingRuntime()
+    runner = LocalMercuryAssistantRunner(rt)  # type: ignore[arg-type]
     intent = json.dumps(
         {
             "kind": "erc20_transfer",
@@ -86,8 +80,25 @@ def test_mercury_invoke_sends_root_idempotency_and_header() -> None:
     model = _FakeWithTools(responses=responses)
     sub = build_mercury_juno_subagent(
         model=model,
-        manifest=JunoAssistantManifest(runner="mercury", base_url_env="X", system_prompt="S"),
+        manifest=JunoAssistantManifest(runner="mercury", system_prompt="S"),
         runner=runner,
     )
-    sub.invoke({"messages": [HumanMessage("go")]}, _cfg())
-    assert len(captured) == 1
+    sub.invoke(
+        {
+            "messages": [HumanMessage("go")],
+            "user_id": "user-1",
+            "wallet_id": "primary",
+            "chain": "base",
+        },
+        _cfg(),
+    )
+    assert len(rt.invocations) == 1
+    state = rt.invocations[0]
+    raw = state.get("raw_input")
+    assert isinstance(raw, dict)
+    assert raw.get("kind") == "erc20_transfer"
+    assert raw.get("idempotency_key") == "transfer-usdc-1"
+    assert "approval_response" not in raw
+    md = raw.get("metadata")
+    assert isinstance(md, dict)
+    assert md.get("user_id") == "user-1"

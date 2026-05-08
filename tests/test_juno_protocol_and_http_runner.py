@@ -1,23 +1,20 @@
-"""Mercury invoke JSON parsing and HTTP runner used by Juno's Mercury plugin."""
+"""Mercury invoke JSON parsing and LocalMercuryAssistantRunner (Juno plugin)."""
 
-import json
-
-import httpx
 import pytest
 
 from juno.approval_markers import JUNO_WALLET_APPROVAL_UI_MARKER
 
+from mercury.graph.state import MercuryState
 from mercury.juno.assistant_turn import (
     AssistantTurnAgentError,
-    AssistantTurnHttpError,
     AssistantTurnSuccess,
     AssistantTurnWalletApproval,
     parse_mercury_body,
 )
-from mercury.juno.runners import MercuryAssistantRunner
+from mercury.juno.runners import LocalMercuryAssistantRunner
 from mercury.juno.tool_text import turn_result_to_tool_text
 
-_MIN_HTTP_INVOKE_PAYLOAD: dict[str, object] = {
+_MIN_INVOKE_PAYLOAD: dict[str, object] = {
     "user_id": "u1",
     "wallet_id": "primary",
     "chain": "base",
@@ -93,121 +90,41 @@ def test_parse_invoke_response_becomes_task_result() -> None:
     assert r.task_result.get("native_balance") == "1.23"
 
 
-def test_run_turn_success_and_idempotency() -> None:
-    captured: list[httpx.Request] = []
+class _FakeRuntime:
+    def __init__(self, state: MercuryState) -> None:
+        self._state = state
+        self.invocations: list[MercuryState] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        return httpx.Response(200, json={"agent_reply": "ok"})
+    def invoke(self, state: MercuryState) -> MercuryState:
+        self.invocations.append(state)
+        return self._state
 
-    runner = MercuryAssistantRunner(
-        "https://mercury.test",
-        transport=httpx.MockTransport(handler),
-        http_path="/v1/mercury/invoke",
-        request_body_mode="flat",
-    )
-    out = runner.run_turn(dict(_MIN_HTTP_INVOKE_PAYLOAD), idempotency_key="idem-1")
+
+def test_local_run_turn_success_and_idempotency() -> None:
+    fake = _FakeRuntime({"response_text": "ok", "chain_name": "base"})
+    runner = LocalMercuryAssistantRunner(fake)  # type: ignore[arg-type]
+    out = runner.run_turn(dict(_MIN_INVOKE_PAYLOAD), idempotency_key="idem-1")
     assert isinstance(out, AssistantTurnSuccess)
-    assert out.agent_reply == "ok"
-    assert len(captured) == 1
-    req = captured[0]
-    assert req.headers.get("Idempotency-Key") == "idem-1"
-    assert b'"idempotency_key":"idem-1"' in (req.content or b"")
+    assert len(fake.invocations) == 1
+    raw = fake.invocations[0].get("raw_input")
+    assert isinstance(raw, dict)
+    assert raw.get("idempotency_key") == "idem-1"
 
 
-def test_run_turn_body_idempotency_key_not_overwritten() -> None:
-    captured: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        return httpx.Response(200, json={"agent_reply": "x"})
-
-    runner = MercuryAssistantRunner(
-        "https://mercury.test",
-        transport=httpx.MockTransport(handler),
-        http_path="/v1/mercury/invoke",
-        request_body_mode="flat",
-    )
-    runner.run_turn({**_MIN_HTTP_INVOKE_PAYLOAD, "idempotency_key": "from-body"}, idempotency_key="from-arg")
-    payload = json.loads(captured[0].content.decode())
-    assert payload["idempotency_key"] == "from-body"
-    assert captured[0].headers.get("Idempotency-Key") == "from-arg"
-
-
-def test_run_turn_http_error() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(502, text="bad gateway")
-
-    runner = MercuryAssistantRunner(
-        "https://mercury.test",
-        transport=httpx.MockTransport(handler),
-        http_path="/v1/mercury/invoke",
-        request_body_mode="flat",
-    )
-    out = runner.run_turn(dict(_MIN_HTTP_INVOKE_PAYLOAD))
-    assert isinstance(out, AssistantTurnHttpError)
-    assert out.status_code == 502
-    assert "bad gateway" in out.body_snippet
+def test_local_run_turn_body_idempotency_key_not_overwritten() -> None:
+    fake = _FakeRuntime({"response_text": "x", "chain_name": "base"})
+    runner = LocalMercuryAssistantRunner(fake)  # type: ignore[arg-type]
+    runner.run_turn({**_MIN_INVOKE_PAYLOAD, "idempotency_key": "from-body"}, idempotency_key="from-arg")
+    raw = fake.invocations[0].get("raw_input")
+    assert isinstance(raw, dict)
+    assert raw.get("idempotency_key") == "from-body"
 
 
 @pytest.mark.asyncio
-async def test_arun_turn() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"task_result": {"n": 2}})
-
-    runner = MercuryAssistantRunner(
-        "https://mercury.test",
-        transport=httpx.MockTransport(handler),
-        http_path="/v1/mercury/invoke",
-        request_body_mode="flat",
-    )
-    out = await runner.arun_turn(dict(_MIN_HTTP_INVOKE_PAYLOAD))
-    assert isinstance(out, AssistantTurnSuccess)
-    assert out.task_result == {"n": 2}
-
-
-def test_run_turn_defaults_mercury_invoke_flat_and_x_request_id() -> None:
-    captured: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        assert request.url.path == "/v1/mercury/invoke"
-        assert request.headers.get("X-Request-ID")
-        body = json.loads(request.content.decode())
-        assert body["intent"]["kind"] == "native_balance"
-        assert body["wallet_id"] == "primary"
-        return httpx.Response(200, json={"agent_reply": "invoked"})
-
-    runner = MercuryAssistantRunner("https://mercury.test", transport=httpx.MockTransport(handler))
-    out = runner.run_turn(
-        {
-            "user_id": "u1",
-            "wallet_id": "primary",
-            "chain": "base",
-            "intent": {"kind": "native_balance", "wallet_address": "0xabc"},
-        },
-    )
-    assert isinstance(out, AssistantTurnSuccess)
-    assert out.agent_reply == "invoked"
-
-
-def test_run_turn_nested_input_mode() -> None:
-    captured: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        outer = json.loads(request.content.decode())
-        assert "input" in outer
-        assert outer["input"]["intent"]["kind"] == "x"
-        return httpx.Response(200, json={"agent_reply": "ok"})
-
-    runner = MercuryAssistantRunner(
-        "https://mercury.test",
-        transport=httpx.MockTransport(handler),
-        http_path="/v1/legacy",
-        request_body_mode="nested_input",
-    )
-    out = runner.run_turn({"intent": {"kind": "x"}})
+async def test_local_arun_turn() -> None:
+    fake = _FakeRuntime({"response_text": "async", "chain_name": "base", "tool_result": {"n": 2}})
+    runner = LocalMercuryAssistantRunner(fake)  # type: ignore[arg-type]
+    out = await runner.arun_turn(dict(_MIN_INVOKE_PAYLOAD))
     assert isinstance(out, AssistantTurnSuccess)
 
 

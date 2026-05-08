@@ -44,7 +44,7 @@ def turn_result_to_tool_text(result: AssistantTurnResult) -> str:
             "again with the SAME intent (including the same idempotency_key inside the intent) "
             "and top-level approval_response. Do not instruct MetaMask/hardware signing unless "
             "this deployment explicitly uses in-wallet signing; the default path is a second "
-            "POST /v1/mercury/invoke with approval_response (1Claw-backed signer)."
+            "Repeat Mercury invoke with approval_response (1Claw-backed signer)."
         )
         parts.append(" ".join(hint_parts))
         return f"{JUNO_WALLET_APPROVAL_UI_MARKER}\n" + "\n".join(parts)

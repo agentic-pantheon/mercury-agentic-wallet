@@ -12,7 +12,7 @@ class JunoAssistantManifest(BaseModel):
     """Subset of Juno's YAML manifest shipped inside the Mercury wheel."""
 
     runner: str
-    base_url_env: str
+    base_url_env: str | None = None
     system_prompt: str
     requires_session_fields: list[str] = Field(default_factory=list)
     guide_path: str | None = None

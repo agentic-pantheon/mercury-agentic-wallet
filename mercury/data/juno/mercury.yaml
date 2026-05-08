@@ -1,9 +1,8 @@
 # Mercury assistant manifest. Role rules and intent recipes live in mercury.md.
 
 runner: mercury
-base_url_env: MERCURY_BASE_URL
 
-guide_path: /v1/mercury/invoke/guide
+guide_path: /mercury/invoke-guide
 
 system_prompt: ""
 

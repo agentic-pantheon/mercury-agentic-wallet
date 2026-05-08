@@ -11,7 +11,7 @@ from mercury.custody import WalletIdValidationError, validate_wallet_id
 
 
 class MercuryInvokeRequest(BaseModel):
-    """Native HTTP request for invoking Mercury."""
+    """Structured request envelope for invoking Mercury (in-process or tests)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -67,7 +67,7 @@ class MercuryError(BaseModel):
 
 
 class MercuryInvokeResponse(BaseModel):
-    """Native HTTP response returned by Mercury invocation."""
+    """Structured response returned by Mercury invocation."""
 
     request_id: str
     status: str
