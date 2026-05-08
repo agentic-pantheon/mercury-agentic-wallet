@@ -505,6 +505,54 @@ Mercury skips the ERC-20 allowance/approval preparation when ``from_token`` is t
 }
 ```
 
+### Cross-chain swap / bridge (`swap`)
+
+Use the same **`kind: "swap"`** intent as a same-chain swap, but describe **two networks**:
+
+| Field | Role |
+|-------|------|
+| **`chain`** | **Source** network (where the wallet spends `from_token`). |
+| **`to_chain`** *(optional)* | **Destination** network name (Mercury canonical name, e.g. `ethereum`, `arbitrum`). |
+| **`to_chain_id`** *(optional)* | **Destination** EVM chain id (e.g. `1` for Ethereum mainnet). |
+
+You may send **`to_chain_id` only** (destination resolved internally), **`to_chain` only**, or **both**; if both are present, they must refer to the **same** chain or validation fails.
+
+**Tokens**
+
+- **`from_token`** — checksummed ERC-20 (or the canonical **native** sell sentinel on the source chain—see the Base ETH → USDC native example above) on the **source** `chain`. **`amount_in`** uses this token’s decimals.
+- **`to_token`** — checksummed ERC-20 on the **destination** chain—the asset you want **on the other side**. It must **not** be the same logical position as `from_token` on the wrong chain; use the **destination** contract address (resolve via **`kind: known_address`** on **`to_chain`** when needed).
+
+**Providers**
+
+Cross-chain quotes are typically obtained via **LiFi** (`provider_preference: "lifi"`). Same-chain-leaning adapters may not support bridge routes; prefer LiFi when bridging.
+
+**Pipeline**
+
+ERC-20 allowance and approval behavior on the **source** chain is the same as for same-chain swaps. The returned transaction may be a bridge step LiFi expects the wallet to sign and broadcast.
+
+### Example: Base → Ethereum USDC bridge sketch (LiFi)
+
+```json
+{
+  "request_id": "req-bridge-1",
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "idempotency_key": "swap-base-to-eth-usdc-1",
+  "intent": {
+    "kind": "swap",
+    "chain": "base",
+    "wallet_id": "primary",
+    "from_token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "to_token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "to_chain": "ethereum",
+    "to_chain_id": 1,
+    "amount_in": "50",
+    "max_slippage_bps": 50,
+    "provider_preference": "lifi"
+  }
+}
+```
+
 ---
 
 ## Responses
