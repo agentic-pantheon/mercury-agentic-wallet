@@ -1,6 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+from mercury.models.erc20 import ZERO_ADDRESS
 from mercury.models.swaps import SwapExecutionType, SwapQuoteRequest
+from mercury.swaps.base import SwapProviderError
 from mercury.swaps.cowswap import CowSwapProvider, cow_network_slug_for_chain_id
 
 TOKEN_IN = "0x000000000000000000000000000000000000cafE"
@@ -20,6 +23,16 @@ def test_cowswap_quote_uses_network_slug_path_not_chain_id() -> None:
     provider.get_quote(_request())
 
     assert client.paths == ["base/api/v1/quote"]
+
+
+def test_cowswap_rejects_native_sell_with_clear_error() -> None:
+    client = FakeHttpClient(_response(include_typed_data=True))
+    provider = CowSwapProvider(http_client=client)
+
+    with pytest.raises(SwapProviderError, match="native token"):
+        provider.get_quote(_native_request())
+
+    assert client.paths == []
 
 
 def test_cowswap_quote_normalizes_order_route() -> None:
@@ -121,6 +134,22 @@ def _request() -> SwapQuoteRequest:
         amount_in="1.5",
         amount_in_raw=1_500_000,
         idempotency_key="swap-1",
+    )
+
+
+def _native_request() -> SwapQuoteRequest:
+    return SwapQuoteRequest(
+        wallet_id="primary",
+        wallet_address=WALLET,
+        chain="base",
+        chain_id=8453,
+        from_token=ZERO_ADDRESS,
+        to_token=TOKEN_OUT,
+        amount_in="1.5",
+        amount_in_raw=1_500_000,
+        idempotency_key="swap-1",
+        from_token_is_native=True,
+        wrapped_from_token="0x4200000000000000000000000000000000000006",
     )
 
 

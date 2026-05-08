@@ -56,7 +56,7 @@ class LiFiProvider:
             params={
                 "fromChain": request.chain_id,
                 "toChain": to_chain,
-                "fromToken": request.from_token,
+                "fromToken": normalize_evm_address(request.from_token),
                 "toToken": request.to_token,
                 "fromAmount": str(request.amount_in_raw),
                 "fromAddress": request.wallet_address,
@@ -151,13 +151,16 @@ class LiFiProvider:
         expires_at = _expiry(payload, estimate, em, action)
         route_kind = SwapRouteKind.BRIDGE if from_chain_id != to_chain_id else SwapRouteKind.SWAP
 
+        from_token_route = _action_token_address(action, "fromToken", request.from_token)
+        if request.from_token_is_native:
+            from_token_route = normalize_evm_address(request.from_token)
         route = SwapRoute(
             provider=self.name,
             route_id=route_id,
             route_kind=route_kind,
             from_chain_id=from_chain_id,
             to_chain_id=to_chain_id,
-            from_token=_action_token_address(action, "fromToken", request.from_token),
+            from_token=from_token_route,
             to_token=_action_token_address(action, "toToken", request.to_token),
             spender_address=spender,
             steps=_steps(payload),

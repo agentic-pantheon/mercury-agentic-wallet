@@ -150,18 +150,48 @@ def redact_error_message(error: BaseException | str) -> str:
     return str(redact_value(message))
 
 
+_LOG_SUMMARY_MAX = 520
+
+
+def format_mercury_log_line(
+    *,
+    scope: str,
+    event: str,
+    fields: Mapping[str, Any],
+    summary: str | None = None,
+) -> str:
+    """Build one log line: ``mercury <scope>:<event> | <summary> | {<json>}``.
+
+    ``scope`` is ``service`` (HTTP, invoke, envelopes) or ``graph`` (LangGraph nodes).
+    Machine-readable fields stay in JSON (redacted); grep for ``mercury graph:`` or
+    ``mercury service:`` and the event name.
+    """
+
+    payload = {"event": event, **redact_value(dict(fields))}
+    body = json.dumps(payload, sort_keys=True, default=str)
+    head = f"mercury {scope}:{event}"
+    if summary:
+        if len(summary) <= _LOG_SUMMARY_MAX:
+            clip = summary
+        else:
+            clip = summary[: _LOG_SUMMARY_MAX - 3] + "..."
+        return f"{head} | {clip} | {body}"
+    return f"{head} | {body}"
+
+
 def log_service_event(
     event: str,
     *,
     level: int = logging.INFO,
     logger: logging.Logger | None = None,
+    summary: str | None = None,
     **fields: Any,
 ) -> None:
-    """Emit a single structured log line with sensitive fields redacted."""
+    """Emit a structured Mercury service log (``mercury service:<event> | ...``)."""
 
     target = logger or get_service_logger()
-    payload = {"event": event, **redact_value(fields)}
-    target.log(level, json.dumps(payload, sort_keys=True, default=str))
+    message = format_mercury_log_line(scope="service", event=event, fields=fields, summary=summary)
+    target.log(level, message)
 
 
 def _is_sensitive_key(key: str) -> bool:

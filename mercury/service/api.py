@@ -127,6 +127,10 @@ def create_app(
         request.state.request_id = request_id
         log_service_event(
             "agent_envelope_request",
+            summary=(
+                f"Pan-agent envelope in: {envelope.payload_kind!r} "
+                f"({envelope.from_role!r} -> {envelope.to_role!r})"
+            ),
             request_id=request_id,
             trace_id=envelope.trace_id,
             turn_id=envelope.turn_id,
@@ -143,6 +147,7 @@ def create_app(
         )
         log_service_event(
             "agent_envelope_response",
+            summary=f"Pan-agent envelope out: {response.payload_kind!r}",
             request_id=request_id,
             payload_kind=response.payload_kind,
             error=response.error,

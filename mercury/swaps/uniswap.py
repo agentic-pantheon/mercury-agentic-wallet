@@ -53,6 +53,12 @@ class UniswapProvider:
     def get_quote(self, request: SwapQuoteRequest) -> SwapQuote:
         """Fetch and normalize a Uniswap quote."""
 
+        if request.from_token_is_native:
+            raise SwapProviderError(
+                "Uniswap Trading API quotes do not support selling the chain native token "
+                "in this adapter; use wrapped native or another provider."
+            )
+
         response = self._http.post_json(
             "/v1/quote",
             payload={

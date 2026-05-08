@@ -117,8 +117,19 @@ def build_alchemy_webhook_graph(
         sample_hashes = [
             a.get("tx_hash") for a in new_alerts[:3] if isinstance(a.get("tx_hash"), str)
         ]
+        skip = summary["skipped"]
+        summ = (
+            f"Alchemy address-activity webhook: skipped={skip}"
+            + (
+                f" ({summary.get('skip_reason')})"
+                if skip
+                else f", emitting {summary['processed']} new alert(s), "
+                f"{summary['duplicate_count']} duplicate(s) suppressed"
+            )
+        )
         log_graph_event(
             "alchemy_address_activity_webhook",
+            summary=summ,
             skipped=summary["skipped"],
             skip_reason=summary.get("skip_reason"),
             normalized_count=summary["normalized_count"],

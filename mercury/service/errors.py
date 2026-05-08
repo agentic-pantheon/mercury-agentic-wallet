@@ -74,6 +74,10 @@ async def _validation_exception_handler(
     details = jsonable_encoder(redact_value(exc.errors()))
     log_service_event(
         "request_validation_error",
+        summary=(
+            "Rejecting request: payload failed FastAPI/Pydantic validation "
+            f"for {request.url.path}"
+        ),
         level=logging.WARNING,
         request_id=request_id,
         path=request.url.path,
@@ -97,6 +101,7 @@ async def _service_exception_handler(request: Request, exc: MercuryServiceError)
     request_id = _request_id(request)
     log_service_event(
         "service_error",
+        summary=f"Returning HTTP {exc.status_code} for {request.url.path}: {type(exc).__name__}",
         level=logging.WARNING if exc.status_code < 500 else logging.ERROR,
         request_id=request_id,
         path=request.url.path,
@@ -121,6 +126,7 @@ async def _custody_exception_handler(request: Request, exc: CustodyError) -> JSO
     request_id = _request_id(request)
     log_service_event(
         "custody_error",
+        summary=f"Custody/secret error on {request.url.path} — client should fix wallet or paths",
         level=logging.WARNING,
         request_id=request_id,
         path=request.url.path,
@@ -143,6 +149,7 @@ async def _chain_exception_handler(request: Request, exc: UnsupportedChainError)
     request_id = _request_id(request)
     log_service_event(
         "chain_error",
+        summary=f"Unsupported or unknown chain in request to {request.url.path}",
         level=logging.WARNING,
         request_id=request_id,
         path=request.url.path,
@@ -165,6 +172,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     request_id = _request_id(request)
     log_service_event(
         "unhandled_error",
+        summary=f"Unhandled exception on {request.url.path} — returning generic 500",
         level=logging.ERROR,
         request_id=request_id,
         path=request.url.path,

@@ -12,10 +12,19 @@ def _service_events(caplog: pytest.LogCaptureFixture) -> list[dict]:
     for record in caplog.records:
         if record.name != "mercury.service":
             continue
-        try:
-            events.append(json.loads(record.getMessage()))
-        except json.JSONDecodeError:
-            continue
+        msg = record.getMessage()
+        for candidate in (
+            msg,
+            msg.rsplit(" | ", 1)[-1] if " | " in msg else "",
+        ):
+            if not candidate:
+                continue
+            try:
+                events.append(json.loads(candidate))
+            except json.JSONDecodeError:
+                continue
+            else:
+                break
     return events
 
 
