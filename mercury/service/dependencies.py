@@ -95,19 +95,15 @@ def get_swap_router(
     )
 
 
-def get_graph_runtime(request: Request) -> GraphRuntime:
-    """Return the app runtime or build the default runtime from service dependencies."""
+def build_standalone_graph_runtime(settings: MercurySettings | None = None) -> GraphRuntime:
+    """Construct the default graph runtime without a FastAPI ``Request`` (shared with Juno local mode)."""
 
-    runtime = getattr(request.app.state, "graph_runtime", None)
-    if runtime is not None:
-        return cast(GraphRuntime, runtime)
-
-    settings = get_service_settings(request)
-    secret_store = get_secret_store(settings)
-    provider_factory = get_provider_factory(secret_store)
-    signer = get_signer(secret_store)
+    resolved = settings if settings is not None else get_settings()
+    secret_store = get_secret_store(resolved)
+    provider_factory = Web3ProviderFactory(secret_store)
+    signer = MercuryWalletSigner(secret_store)
     ens_resolver = Web3EnsAddressResolver(provider_factory)
-    swap_router = get_swap_router(settings, secret_store)
+    swap_router = get_swap_router(resolved, secret_store)
     transaction_deps = TransactionGraphDependencies(
         backend=Web3TransactionBackend(provider_factory),
         signer=signer,
@@ -118,7 +114,7 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
     alchemy_prices: AlchemyPricesToolDeps | None = None
     alchemy_portfolio: AlchemyPortfolioToolDeps | None = None
     alchemy_transfers: AlchemyTransfersToolDeps | None = None
-    alchemy_path = settings.alchemy_api_secret_path.strip()
+    alchemy_path = resolved.alchemy_api_secret_path.strip()
     if alchemy_path:
         alchemy_prices = AlchemyPricesToolDeps(
             secret_store=secret_store,
@@ -133,7 +129,7 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
             api_key_secret_path=alchemy_path,
         )
 
-    runtime = build_default_runtime(
+    return build_default_runtime(
         registry=ReadOnlyToolRegistry.from_provider_factory(
             provider_factory,
             alchemy_prices=alchemy_prices,
@@ -151,9 +147,20 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
             address_resolver=signer,
         ),
         transaction_deps=transaction_deps,
-        runtime_settings=settings,
+        runtime_settings=resolved,
         ens_resolver=ens_resolver,
     )
+
+
+def get_graph_runtime(request: Request) -> GraphRuntime:
+    """Return the app runtime or build the default runtime from service dependencies."""
+
+    runtime = getattr(request.app.state, "graph_runtime", None)
+    if runtime is not None:
+        return cast(GraphRuntime, runtime)
+
+    settings = get_service_settings(request)
+    runtime = build_standalone_graph_runtime(settings)
     request.app.state.graph_runtime = runtime
     return runtime
 
