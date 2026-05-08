@@ -1,4 +1,4 @@
-"""Pydantic models for Mercury HTTP JSON responses (invoke/agent paths).
+"""Pydantic models for Mercury HTTP JSON invoke responses.
 
 Mercury returns a JSON object. Shapes may be flat or nested under ``data``.
 The runner merges top-level keys with ``data`` (later wins on conflict).

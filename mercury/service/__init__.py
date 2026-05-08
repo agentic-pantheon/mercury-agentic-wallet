@@ -3,12 +3,10 @@
 from typing import Any
 
 from mercury.service.models import MercuryInvokeRequest, MercuryInvokeResponse
-from mercury.service.pan_agentikit_models import PanAgentEnvelope
 
 __all__ = [
     "MercuryInvokeRequest",
     "MercuryInvokeResponse",
-    "PanAgentEnvelope",
     "create_app",
 ]
 

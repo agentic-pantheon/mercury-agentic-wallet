@@ -11,7 +11,7 @@ from mercury.custody import WalletIdValidationError, validate_wallet_id
 
 
 class MercuryInvokeRequest(BaseModel):
-    """Native HTTP request for invoking Mercury without pan-agentikit envelopes."""
+    """Native HTTP request for invoking Mercury."""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -41,7 +41,7 @@ minimal environments.
 - Prepare normalized swap transactions using LiFi, CoW Swap, and Uniswap adapters.
 - Require policy checks, idempotency, and human approval before value-moving signing.
 - Sign transactions and EIP-712 typed data through a 1Claw-backed private-key boundary.
-- Expose both a native HTTP API and a pan-agentikit-compatible envelope API.
+- Expose a native HTTP API for graph invocation.
 - Accept **Alchemy Notify** Address Activity webhooks at
   `POST /v1/webhooks/alchemy/address-activity` (HMAC-verified; dedicated handler graph,
   not `invoke`). See `mercury/service/MERCURY_AGENT_GUIDE.md`.
@@ -229,13 +229,8 @@ they can be used by policy or the transaction pipeline.
 - `GET /readyz`
 - `GET /v1/mercury/invoke/guide` — Markdown instructions for coordinators (source: `mercury/service/MERCURY_AGENT_GUIDE.md`)
 - `POST /v1/mercury/invoke`
-- `POST /v1/agent`
 
-`/v1/mercury/invoke` is Mercury's native API. `/v1/agent` is a local
-pan-agentikit-compatible `Envelope -> Envelope` adapter. The adapter accepts
-`user_message` and `task_request` payloads and returns `agent_reply`, `task_result`,
-`wallet_approval_required`, or `agent_error` payloads.
-
+`/v1/mercury/invoke` is Mercury's native API.
 All service responses and structured logs pass through redaction helpers before
 leaving the process.
 
@@ -486,64 +481,6 @@ curl -X POST http://127.0.0.1:8000/v1/mercury/invoke \
 With the default placeholder approver, value-moving requests return an approval
 required response instead of signing unattended.
 
-## pan-agentikit Envelope API
-
-Mercury exposes `POST /v1/agent` for agent-to-agent calls.
-
-Example `user_message` envelope:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/agent \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schema_version": "1",
-    "id": "env-1",
-    "trace_id": "trace-1",
-    "turn_id": "turn-1",
-    "step_id": "step-1",
-    "from_role": "coordinator",
-    "to_role": "mercury",
-    "metadata": {
-      "user_id": "user-1",
-      "wallet_id": "primary",
-      "chain": "base"
-    },
-    "payload": {
-      "kind": "user_message",
-      "version": 1,
-      "text": "What is my native balance?"
-    }
-  }'
-```
-
-Example `task_request` envelope:
-
-```json
-{
-  "schema_version": "1",
-  "id": "env-task-1",
-  "trace_id": "trace-task-1",
-  "from_role": "coordinator",
-  "to_role": "mercury",
-  "payload": {
-    "kind": "task_request",
-    "version": 1,
-    "task_id": "task-read-1",
-    "user_id": "user-1",
-    "wallet_id": "primary",
-    "chain": "base",
-    "input": {
-      "kind": "native_balance",
-      "wallet_address": "0x000000000000000000000000000000000000dEaD"
-    }
-  }
-}
-```
-
-The adapter preserves trace IDs, turn IDs, roles, parent step IDs, artifacts, task IDs,
-and idempotency metadata. Value-moving `task_request` payloads must include an
-idempotency key before Mercury invokes the graph.
-
 ## Programmatic Usage
 
 Read-only graph with fakes:
@@ -623,6 +560,3 @@ can attempt a connection.
 - CoW Swap typed orders are normalized but not automatically submitted.
 - Human approval is represented by an injectable boundary; production approval UX is
   expected to be wired by the hosting runtime.
-- The pan-agentikit dependency is not required yet. Mercury uses local compatibility
-  models that match the current envelope semantics and can be swapped for the package
-  when it is published and stable.

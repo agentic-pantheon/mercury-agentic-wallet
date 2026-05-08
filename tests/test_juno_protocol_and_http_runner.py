@@ -17,6 +17,13 @@ from mercury.juno.assistant_turn import (
 from mercury.juno.runners import MercuryAssistantRunner
 from mercury.juno.tool_text import turn_result_to_tool_text
 
+_MIN_HTTP_INVOKE_PAYLOAD: dict[str, object] = {
+    "user_id": "u1",
+    "wallet_id": "primary",
+    "chain": "base",
+    "intent": {"kind": "native_balance", "wallet_address": "0xabc"},
+}
+
 
 def test_parse_success_flat() -> None:
     r = parse_mercury_body({"agent_reply": "Hello"})
@@ -96,10 +103,10 @@ def test_run_turn_success_and_idempotency() -> None:
     runner = MercuryAssistantRunner(
         "https://mercury.test",
         transport=httpx.MockTransport(handler),
-        http_path="/v1/agent",
+        http_path="/v1/mercury/invoke",
         request_body_mode="flat",
     )
-    out = runner.run_turn({"messages": []}, idempotency_key="idem-1")
+    out = runner.run_turn(dict(_MIN_HTTP_INVOKE_PAYLOAD), idempotency_key="idem-1")
     assert isinstance(out, AssistantTurnSuccess)
     assert out.agent_reply == "ok"
     assert len(captured) == 1
@@ -118,10 +125,10 @@ def test_run_turn_body_idempotency_key_not_overwritten() -> None:
     runner = MercuryAssistantRunner(
         "https://mercury.test",
         transport=httpx.MockTransport(handler),
-        http_path="/v1/agent",
+        http_path="/v1/mercury/invoke",
         request_body_mode="flat",
     )
-    runner.run_turn({"idempotency_key": "from-body"}, idempotency_key="from-arg")
+    runner.run_turn({**_MIN_HTTP_INVOKE_PAYLOAD, "idempotency_key": "from-body"}, idempotency_key="from-arg")
     payload = json.loads(captured[0].content.decode())
     assert payload["idempotency_key"] == "from-body"
     assert captured[0].headers.get("Idempotency-Key") == "from-arg"
@@ -134,10 +141,10 @@ def test_run_turn_http_error() -> None:
     runner = MercuryAssistantRunner(
         "https://mercury.test",
         transport=httpx.MockTransport(handler),
-        http_path="/v1/agent",
+        http_path="/v1/mercury/invoke",
         request_body_mode="flat",
     )
-    out = runner.run_turn({})
+    out = runner.run_turn(dict(_MIN_HTTP_INVOKE_PAYLOAD))
     assert isinstance(out, AssistantTurnHttpError)
     assert out.status_code == 502
     assert "bad gateway" in out.body_snippet
@@ -151,10 +158,10 @@ async def test_arun_turn() -> None:
     runner = MercuryAssistantRunner(
         "https://mercury.test",
         transport=httpx.MockTransport(handler),
-        http_path="/v1/agent",
+        http_path="/v1/mercury/invoke",
         request_body_mode="flat",
     )
-    out = await runner.arun_turn({})
+    out = await runner.arun_turn(dict(_MIN_HTTP_INVOKE_PAYLOAD))
     assert isinstance(out, AssistantTurnSuccess)
     assert out.task_result == {"n": 2}
 

@@ -19,7 +19,6 @@ from mercury.service.errors import DependencyUnavailableError, install_exception
 from mercury.service.http_logging import MercuryHttpLoggingMiddleware
 from mercury.service.logging import (
     configure_service_logging,
-    log_service_event,
     parse_mercury_log_level,
 )
 from mercury.service.models import (
@@ -28,8 +27,6 @@ from mercury.service.models import (
     MercuryInvokeResponse,
     ReadinessResponse,
 )
-from mercury.service.pan_agentikit_handler import handle_agent_envelope
-from mercury.service.pan_agentikit_models import PanAgentEnvelope
 from mercury.webhooks.alchemy_dedupe import AlchemyWebhookDedupeStore
 from mercury.webhooks.alchemy_handler import merge_watched_addresses
 from mercury.webhooks.alchemy_verify import is_valid_signature_for_string_body
@@ -114,45 +111,6 @@ def create_app(
             x_request_id=x_request_id,
             idempotency_key=idempotency_key,
         )
-
-    @app.post("/v1/agent", response_model=PanAgentEnvelope)
-    def invoke_agent(
-        request: Request,
-        envelope: PanAgentEnvelope,
-        graph_runtime: Annotated[GraphRuntime, Depends(get_graph_runtime)],
-        x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
-        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    ) -> PanAgentEnvelope:
-        request_id = envelope.trace_id or x_request_id or envelope.id
-        request.state.request_id = request_id
-        log_service_event(
-            "agent_envelope_request",
-            summary=(
-                f"Pan-agent envelope in: {envelope.payload_kind!r} "
-                f"({envelope.from_role!r} -> {envelope.to_role!r})"
-            ),
-            request_id=request_id,
-            trace_id=envelope.trace_id,
-            turn_id=envelope.turn_id,
-            from_role=envelope.from_role,
-            to_role=envelope.to_role,
-            payload_kind=envelope.payload_kind,
-            idempotency_key=idempotency_key or envelope.metadata.get("idempotency_key"),
-        )
-        response = handle_agent_envelope(
-            envelope,
-            graph_runtime=graph_runtime,
-            request_id=x_request_id,
-            idempotency_key=idempotency_key,
-        )
-        log_service_event(
-            "agent_envelope_response",
-            summary=f"Pan-agent envelope out: {response.payload_kind!r}",
-            request_id=request_id,
-            payload_kind=response.payload_kind,
-            error=response.error,
-        )
-        return response
 
     @app.post("/v1/webhooks/alchemy/address-activity")
     async def alchemy_address_activity_webhook(
