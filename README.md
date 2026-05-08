@@ -10,6 +10,27 @@ Mercury currently supports Ethereum and Base and is designed so new chains, prov
 service adapters, and policy rules can be added without changing the core custody
 model.
 
+## Using Mercury with Juno
+
+[Juno](https://github.com/agentic-pantheon/Juno) loads assistants from setuptools entry
+points in group **`juno.assistants`**. This repository registers **`mercury`** pointing at
+**`mercury.juno_plugin:create_plugin`** (see **`pyproject.toml`**).
+
+Typical install: **`pip install juno mercury`** in one environment so entry-point
+discovery finds the Mercury plugin.
+
+The plugin reads Juno **`Settings`** fields such as **`MERCURY_RUNNER_MODE`** (`http` vs
+`local`), **`MERCURY_BASE_URL`**, **`MERCURY_HTTP_PATH`**, and **`MERCURY_REQUEST_BODY_MODE`**.
+**`local`** mode shares graph construction with FastAPI via
+**`mercury.service.dependencies.build_standalone_graph_runtime`**.
+
+Juno-facing specialist prompts are shipped as wheel data under **`mercury/data/juno/`**
+(**`mercury.yaml`**, **`mercury.md`**). To disable Mercury without uninstalling, set Juno’s
+**`JUNO_DISABLED_ASSISTANTS`** include list to **`mercury`**.
+
+Optional extra **`pip install mercury[juno]`** adds an explicit **`juno`** dependency for
+minimal environments.
+
 ## What Mercury Can Do
 
 - Read native balances, ERC20 balances, ERC20 allowances, ERC20 metadata, and
