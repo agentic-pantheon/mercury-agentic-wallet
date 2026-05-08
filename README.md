@@ -239,6 +239,11 @@ pan-agentikit-compatible `Envelope -> Envelope` adapter. The adapter accepts
 All service responses and structured logs pass through redaction helpers before
 leaving the process.
 
+Startup reads **`MERCURY_LOG_LEVEL`** (default **`DEBUG`**) via Pydantic settings and
+threads it through **`configure_service_logging`**: uvicorn attaches root handlers
+before the FastAPI factory runs, so Mercury also aligns each handler’s **`setLevel`** and the
+**`uvicorn`**, **`uvicorn.error`**, and **`uvicorn.access`** loggers; otherwise **`DEBUG`** would be swallowed at the handler. Use **`INFO`** or **`WARNING`** when you want quieter production logs (override with **`--log-level info`** etc. from uvicorn).
+
 ## Repository Layout
 
 ```text
@@ -313,6 +318,7 @@ Current environment variables:
 ```bash
 MERCURY_APP_NAME=Mercury Wallet Agent
 MERCURY_DEFAULT_CHAIN=ethereum
+MERCURY_LOG_LEVEL=DEBUG
 MERCURY_ETHEREUM_RPC_SECRET_PATH=mercury/rpc/ethereum
 MERCURY_BASE_RPC_SECRET_PATH=mercury/rpc/base
 MERCURY_ONECLAW_BASE_URL=http://localhost:8080

@@ -16,6 +16,13 @@ class MercurySettings(BaseSettings):
         default=True,
         description="Log each LangGraph node completion to stderr when True.",
     )
+    log_level: str = Field(
+        default="DEBUG",
+        description=(
+            "Root process log level (e.g. DEBUG, INFO). Env MERCURY_LOG_LEVEL. "
+            "Invalid names fall back to DEBUG."
+        ),
+    )
 
     ethereum_rpc_secret_path: str = Field(
         default="mercury/rpc/ethereum",

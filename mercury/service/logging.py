@@ -45,6 +45,16 @@ _PLAIN_LINE = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 _PLAIN_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
 
+def parse_mercury_log_level(level_name: str) -> int:
+    """Resolve a logging level string to an int (default DEBUG for unknown labels)."""
+
+    key = level_name.strip().upper() or "DEBUG"
+    resolved = getattr(logging, key, logging.DEBUG)
+    if isinstance(resolved, int):
+        return resolved
+    return logging.DEBUG
+
+
 def stderr_supports_color() -> bool:
     """True when stderr is a TTY and NO_COLOR is unset (https://no-color.org/)."""
 
@@ -75,14 +85,26 @@ class MercuryColoredFormatter(logging.Formatter):
         )
 
 
-def configure_service_logging(*, level: int = logging.INFO) -> None:
-    """Attach a stderr handler when the root logger has none (covers bare Uvicorn hosts)."""
+_UVICORN_LOGGER_NAMES = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
+
+def configure_service_logging(*, level: int = logging.DEBUG) -> None:
+    """Align root handlers and Mercury loggers with ``level``.
+
+    Under uvicorn, root handlers usually exist already and keep their own
+    ``handler.level`` unless updated here — otherwise DEBUG would be filtered out.
+    """
 
     root = logging.getLogger()
     if root.handlers:
-        if root.level > level:
-            root.setLevel(level)
+        root.setLevel(level)
+        for handler in root.handlers:
+            handler.setLevel(level)
+
         logging.getLogger("mercury.graph").setLevel(logging.NOTSET)
+        logging.getLogger("mercury.service").setLevel(logging.NOTSET)
+        for uv_name in _UVICORN_LOGGER_NAMES:
+            logging.getLogger(uv_name).setLevel(level)
         return
 
     fmt_color = MercuryColoredFormatter(use_color=stderr_supports_color())
@@ -91,6 +113,9 @@ def configure_service_logging(*, level: int = logging.INFO) -> None:
     handler.setFormatter(fmt_color)
     root.addHandler(handler)
     root.setLevel(level)
+
+    logging.getLogger("mercury.graph").setLevel(logging.NOTSET)
+    logging.getLogger("mercury.service").setLevel(logging.NOTSET)
 
 
 def get_service_logger() -> logging.Logger:

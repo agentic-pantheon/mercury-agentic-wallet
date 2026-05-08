@@ -17,7 +17,11 @@ from mercury.invoke import MercuryInvoker, get_invoke_guide_markdown
 from mercury.service.dependencies import get_graph_runtime, get_secret_store, get_service_settings
 from mercury.service.errors import DependencyUnavailableError, install_exception_handlers
 from mercury.service.http_logging import MercuryHttpLoggingMiddleware
-from mercury.service.logging import configure_service_logging, log_service_event
+from mercury.service.logging import (
+    configure_service_logging,
+    log_service_event,
+    parse_mercury_log_level,
+)
 from mercury.service.models import (
     HealthResponse,
     MercuryInvokeRequest,
@@ -62,7 +66,7 @@ def create_app(
     """Create the Mercury FastAPI app without touching external services."""
 
     effective_settings = settings or MercurySettings()
-    configure_service_logging()
+    configure_service_logging(level=parse_mercury_log_level(effective_settings.log_level))
     app = FastAPI(title=effective_settings.app_name)
     app.state.settings = effective_settings
     if runtime is not None:

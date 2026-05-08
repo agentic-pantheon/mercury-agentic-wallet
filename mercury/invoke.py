@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Set as AbstractSet
+from collections.abc import Mapping
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any, cast
 
@@ -72,6 +73,7 @@ class MercuryInvoker:
             wallet_id=payload.wallet_id,
             chain=payload.chain,
             idempotency_key=effective_idempotency_key,
+            intent_kind=_intent_kind_from_payload(payload),
         )
         try:
             result = self._runtime.invoke(state)
@@ -85,13 +87,49 @@ class MercuryInvoker:
         )
         log_service_event(
             "invoke_response",
-            request_id=request_id,
-            status=response.status,
-            chain=response.chain,
-            tx_hash=response.tx_hash,
-            approval_required=response.approval_required,
+            **_invoke_response_log_fields(payload, response, request_id=request_id),
         )
         return response
+
+
+def _intent_kind_from_payload(payload: MercuryInvokeRequest) -> str:
+    """Best-effort intent kind for logs (no RPC; matches graph routing shape)."""
+
+    intent = payload.intent
+    if isinstance(intent, dict):
+        kind_raw = intent.get("kind") or intent.get("type") or intent.get("intent")
+        if isinstance(kind_raw, str):
+            lowered = kind_raw.strip().lower()
+            return lowered if lowered else "unset"
+        return "unset"
+    if isinstance(intent, str):
+        return "literal_text"
+    return "unset"
+
+
+def _invoke_response_log_fields(
+    payload: MercuryInvokeRequest,
+    response: MercuryInvokeResponse,
+    *,
+    request_id: str,
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "intent_kind": _intent_kind_from_payload(payload),
+        "request_id": request_id,
+        "status": response.status,
+        "chain": response.chain,
+        "tx_hash": response.tx_hash,
+        "approval_required": response.approval_required,
+    }
+    err = response.error
+    if err is not None:
+        fields["error_code"] = err.code
+        fields["error_category"] = err.category
+        fields["error_message"] = err.message
+        details = err.details
+        if isinstance(details, dict) and details.get("stage") is not None:
+            fields["error_stage"] = details.get("stage")
+    return fields
 
 
 def _mercury_error_from_info(info: MercuryErrorInfo) -> MercuryError:
@@ -311,7 +349,7 @@ def _mapping(value: object) -> dict[str, Any] | None:
 
 
 def _jsonable(value: object) -> object:
-    """Coerce graph state values so :func:`redact_value` and JSON responses never see raw exceptions."""
+    """Coerce graph state values for ``redact_value`` / JSON responses (no raw exceptions)."""
 
     if value is None or isinstance(value, bool | int | float | str):
         return value
