@@ -1,35 +1,22 @@
-from fastapi.testclient import TestClient
+import pytest
+from pydantic import ValidationError
+
 from mercury.graph.state import MercuryState
+from mercury.invoke import MercuryInvoker
 from mercury.models.errors import internal_error
-from mercury.service import create_app
+from mercury.service.errors import GraphInvocationError
+from mercury.service.models import MercuryInvokeRequest
 
 
 def test_invoke_validation_error_rejects_malformed_wallet_id() -> None:
-    runtime = RaisingRuntime(RuntimeError("should not be called"))
-    client = TestClient(create_app(runtime=runtime), raise_server_exceptions=False)
-
-    response = client.post(
-        "/v1/mercury/invoke",
-        json={
-            "request_id": "req-validation",
-            "user_id": "user-1",
-            "wallet_id": "../primary",
-            "intent": {"kind": "native_balance"},
-        },
-    )
-
-    assert response.status_code == 422
-    payload = response.json()
-    assert payload["status"] == "error"
-    assert payload["message"] == "Request validation failed."
-    err = payload["error"]
-    assert err["code"] == "validation_failed"
-    assert err["category"] == "validation"
-    assert err["retryable"] is False
-    assert err["recoverable"] is True
-    assert isinstance(err["details"], list)
-    assert err["llm_action"]
-    assert runtime.called is False
+    with pytest.raises(ValidationError) as ctx:
+        MercuryInvokeRequest(
+            request_id="req-validation",
+            user_id="user-1",
+            wallet_id="../primary",
+            intent={"kind": "native_balance"},
+        )
+    assert "wallet_id" in str(ctx.value).lower()
 
 
 def test_invoke_redacts_secret_like_graph_state_errors() -> None:
@@ -44,23 +31,19 @@ def test_invoke_redacts_secret_like_graph_state_errors() -> None:
             ),
         }
     )
-    client = TestClient(create_app(runtime=runtime))
-
-    response = client.post(
-        "/v1/mercury/invoke",
-        json={
-            "request_id": "req-redact",
-            "user_id": "user-1",
-            "wallet_id": "primary",
-            "intent": {"kind": "native_balance"},
-        },
+    payload = MercuryInvokeRequest(
+        request_id="req-redact",
+        user_id="user-1",
+        wallet_id="primary",
+        intent={"kind": "native_balance"},
     )
+    response = MercuryInvoker(runtime).invoke(payload)
 
-    assert response.status_code == 200
-    text = response.text
-    payload = response.json()
-    assert payload["error"]["code"] == "internal_error"
-    assert payload["error"]["category"] == "internal"
+    dumped = response.model_dump(mode="json")
+    text = str(dumped)
+    assert response.error is not None
+    assert response.error.code == "internal_error"
+    assert response.error.category == "internal"
     assert "https://rpc.example.invalid" not in text
     assert "mercury/wallets/primary/private_key" not in text
     assert "<redacted>" in text
@@ -68,23 +51,15 @@ def test_invoke_redacts_secret_like_graph_state_errors() -> None:
 
 def test_invoke_graph_exception_maps_to_sanitized_error() -> None:
     runtime = RaisingRuntime(RuntimeError("boom https://rpc.example.invalid bearer=secret-token"))
-    client = TestClient(create_app(runtime=runtime), raise_server_exceptions=False)
-
-    response = client.post(
-        "/v1/mercury/invoke",
-        json={
-            "request_id": "req-graph-error",
-            "user_id": "user-1",
-            "wallet_id": "primary",
-            "intent": {"kind": "native_balance"},
-        },
+    payload = MercuryInvokeRequest(
+        request_id="req-graph-error",
+        user_id="user-1",
+        wallet_id="primary",
+        intent={"kind": "native_balance"},
     )
-
-    assert response.status_code == 500
-    text = response.text
-    payload = response.json()
-    assert payload["error"]["code"] == "graph_invocation_failed"
-    assert payload["error"]["category"] == "internal"
+    with pytest.raises(GraphInvocationError) as ctx:
+        MercuryInvoker(runtime).invoke(payload)
+    text = str(ctx.value)
     assert "https://rpc.example.invalid" not in text
     assert "secret-token" not in text
     assert "<redacted>" in text

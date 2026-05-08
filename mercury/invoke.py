@@ -1,4 +1,4 @@
-"""Public in-process API for Mercury graph invocation (HTTP and local runners)."""
+"""Public in-process API for Mercury graph invocation."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def invoke_mercury(
     x_request_id: str | None = None,
     idempotency_key: str | None = None,
 ) -> MercuryInvokeResponse:
-    """Invoke Mercury using the same conversion and mapping flow as ``POST /v1/mercury/invoke``."""
+    """Invoke Mercury (graph runtime) with request/response mapping aligned to ``MercuryInvoke*`` models."""
 
     return MercuryInvoker(runtime).invoke(
         payload,
@@ -82,7 +82,7 @@ def invoke_mercury(
 
 
 class MercuryInvoker:
-    """In-process Mercury invocation with HTTP-equivalent request/response mapping."""
+    """In-process Mercury invocation with stable request/response mapping."""
 
     def __init__(self, runtime: GraphRuntime) -> None:
         self._runtime = runtime

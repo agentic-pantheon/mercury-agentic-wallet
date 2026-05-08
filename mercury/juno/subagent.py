@@ -106,13 +106,12 @@ def build_mercury_juno_subagent(
         intent_json: str,
         state: Annotated[dict[str, Any], InjectedState],
     ) -> str:
-        """Call Mercury ``POST /v1/mercury/invoke`` with a structured ``intent``.
+        """Invoke Mercury with a structured ``intent`` (in-process graph run).
 
         ``intent_json`` MUST be a JSON object with a ``kind`` field. Session fields
         ``user_id``, ``wallet_id``, ``chain``, and ``approval_response`` are merged
         from graph state (never nest ``approval_response`` under the intent).
-        For value-moving calls include ``idempotency_key`` inside the intent; it is
-        mirrored on the POST body and ``Idempotency-Key`` header where applicable.
+        For value-moving calls include ``idempotency_key`` inside the intent.
         """
 
         try:

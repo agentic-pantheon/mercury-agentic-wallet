@@ -4,15 +4,18 @@ import json
 import logging
 from typing import Any
 
-from fastapi.testclient import TestClient
+import pytest
 from mercury.graph.agent import build_transaction_graph
 from mercury.graph.nodes_transaction import TransactionGraphDependencies
 from mercury.graph.state import MercuryState
+from mercury.invoke import MercuryInvoker
 from mercury.models import ExecutionStatus, GasFees, PreparedTransaction, SignedTransactionResult
 from mercury.models.execution import ExecutableTransaction
 from mercury.models.simulation import SimulationResult, SimulationStatus
 from mercury.service import create_app
+from mercury.service.errors import GraphInvocationError
 from mercury.service.logging import log_service_event
+from mercury.service.models import MercuryInvokeRequest
 
 from tests.fakes.secret_store import TEST_ONECLAW_API_KEY, TEST_PRIVATE_KEY, TEST_RPC_URL
 from tests.fakes.signer import RecordingSigner
@@ -49,7 +52,7 @@ def test_transaction_graph_does_not_serialize_signer_private_key_or_secret_error
     assert "sign" not in events
 
 
-def test_native_service_redacts_secrets_from_response_payload_and_logs(caplog: Any) -> None:
+def test_native_service_redacts_secrets_from_invoke_response_and_logs(caplog: Any) -> None:
     runtime = StaticRuntime(
         {
             "chain_name": "base",
@@ -61,62 +64,51 @@ def test_native_service_redacts_secrets_from_response_payload_and_logs(caplog: A
             },
         }
     )
-    client = TestClient(create_app(runtime=runtime))
+    create_app(runtime=runtime)
+    payload = MercuryInvokeRequest(
+        request_id="req-secret-redaction",
+        user_id="user-1",
+        wallet_id="primary",
+        intent={"kind": "native_balance"},
+    )
 
     with caplog.at_level(logging.INFO, logger="mercury.service"):
-        response = client.post(
-            "/v1/mercury/invoke",
-            json={
-                "request_id": "req-secret-redaction",
-                "user_id": "user-1",
-                "wallet_id": "primary",
-                "intent": {"kind": "native_balance"},
-            },
-        )
+        response = MercuryInvoker(runtime).invoke(payload)
         log_service_event(
             "test_secret_event",
             rpc_url=TEST_RPC_URL,
             authorization=f"Bearer {TEST_ONECLAW_API_KEY}",
         )
 
-    assert response.status_code == 200
-    assert_no_secret_values(response.text)
-    assert "<redacted>" in response.text
+    text = json.dumps(response.model_dump(mode="json"))
+    assert_no_secret_values(text)
+    assert "<redacted>" in text
     assert_no_secret_values(caplog.text)
 
 
-def test_native_invoke_route_redacts_malicious_payload_and_graph_errors() -> None:
+def test_invoke_redacts_malicious_payload_and_graph_errors() -> None:
     runtime = RaisingRuntime(
         RuntimeError(
             f"boom {TEST_RPC_URL} bearer={TEST_ONECLAW_API_KEY} mercury/wallets/primary/private_key"
         )
     )
-    client = TestClient(create_app(runtime=runtime), raise_server_exceptions=False)
-
-    response = client.post(
-        "/v1/mercury/invoke",
-        json={
-            "request_id": "req-graph-error-redaction",
-            "user_id": "user-1",
-            "wallet_id": "primary",
-            "chain": "base",
-            "intent": {"kind": "native_balance"},
-            "metadata": {
-                "api_key": TEST_ONECLAW_API_KEY,
-                "debug": f"using {TEST_RPC_URL}",
-            },
+    payload = MercuryInvokeRequest(
+        request_id="req-graph-error-redaction",
+        user_id="user-1",
+        wallet_id="primary",
+        chain="base",
+        intent={"kind": "native_balance"},
+        metadata={
+            "api_key": TEST_ONECLAW_API_KEY,
+            "debug": f"using {TEST_RPC_URL}",
         },
     )
-
-    assert response.status_code == 500
-    assert_no_secret_values(response.text)
-    payload = response.json()
-    assert payload["status"] == "error"
-    assert payload["error"]["code"] == "graph_invocation_failed"
-    assert payload["error"]["category"] == "internal"
-    assert payload["error"]["llm_action"]
-    assert_no_secret_values(payload["error"]["llm_action"])
-    assert payload["error"]["message"].count("<redacted>") >= 2
+    with pytest.raises(GraphInvocationError) as ctx:
+        MercuryInvoker(runtime).invoke(payload)
+    text = str(ctx.value)
+    assert_no_secret_values(text)
+    assert "<redacted>" in text
+    assert text.count("<redacted>") >= 2
 
 
 def assert_no_secret_values(text: str) -> None:

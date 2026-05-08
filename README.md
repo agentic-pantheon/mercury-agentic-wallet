@@ -244,10 +244,9 @@ they can be used by policy or the transaction pipeline.
 
 - `GET /healthz`
 - `GET /readyz`
-- `GET /v1/mercury/invoke/guide` — Markdown instructions for coordinators (source: `mercury/service/MERCURY_AGENT_GUIDE.md`)
-- `POST /v1/mercury/invoke`
+- `POST /v1/webhooks/alchemy/address-activity`
 
-`/v1/mercury/invoke` is Mercury's native API.
+Graph invocation is **in-process** via `mercury.invoke.invoke_mercury` (and the Juno plugin’s `LocalMercuryAssistantRunner`), not over HTTP. The agent integration guide ships as bundled Markdown (`mercury.invoke.get_invoke_guide_markdown()`, source `mercury/service/MERCURY_AGENT_GUIDE.md`).
 All service responses and structured logs pass through redaction helpers before
 leaving the process.
 
@@ -428,71 +427,79 @@ export MERCURY_ONECLAW_AGENT_ID="mercury-local" # optional
 Never commit `.env` files or real secrets. `.env.example` intentionally contains only
 secret paths and non-secret configuration.
 
-## Native API Examples
+## In-process invoke examples
 
-Start the service:
+Start the service (health, readiness, webhooks only):
 
 ```bash
 uv run uvicorn mercury.service.api:app --reload
 ```
 
-Read a native balance:
+Invoke the graph from Python (same `MercuryInvokeRequest` / `MercuryInvokeResponse` models as tests and Juno):
 
-```bash
-curl -X POST http://127.0.0.1:8000/v1/mercury/invoke \
-  -H "Content-Type: application/json" \
-  -H "X-Request-ID: req-balance-1" \
-  -d '{
-    "user_id": "user-1",
-    "wallet_id": "primary",
-    "chain": "base",
-    "intent": {
-      "kind": "native_balance",
-      "wallet_address": "0x000000000000000000000000000000000000dEaD"
-    }
-  }'
+```python
+from mercury.invoke import invoke_mercury
+from mercury.service.dependencies import build_standalone_graph_runtime
+from mercury.service.models import MercuryInvokeRequest
+
+runtime = build_standalone_graph_runtime()
+payload = MercuryInvokeRequest(
+    user_id="user-1",
+    wallet_id="primary",
+    chain="base",
+    intent={
+        "kind": "native_balance",
+        "wallet_address": "0x000000000000000000000000000000000000dEaD",
+    },
+)
+response = invoke_mercury(runtime, payload, x_request_id="req-balance-1")
+print(response.model_dump_json())
 ```
 
-Prepare an ERC20 transfer request:
+ERC-20 transfer (set `idempotency_key` on the request or inside the intent):
 
-```bash
-curl -X POST http://127.0.0.1:8000/v1/mercury/invoke \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: erc20-transfer-1" \
-  -d '{
-    "request_id": "req-transfer-1",
-    "user_id": "user-1",
-    "wallet_id": "primary",
-    "intent": {
-      "kind": "erc20_transfer",
-      "chain": "base",
-      "token_address": "0x000000000000000000000000000000000000cafE",
-      "recipient_address": "0x000000000000000000000000000000000000bEEF",
-      "amount": "1.5"
-    }
-  }'
+```python
+response = invoke_mercury(
+    runtime,
+    MercuryInvokeRequest(
+        request_id="req-transfer-1",
+        user_id="user-1",
+        wallet_id="primary",
+        idempotency_key="erc20-transfer-1",
+        intent={
+            "kind": "erc20_transfer",
+            "chain": "base",
+            "token_address": "0x000000000000000000000000000000000000cafE",
+            "recipient_address": "0x000000000000000000000000000000000000bEEF",
+            "amount": "1.5",
+        },
+    ),
+    idempotency_key="erc20-transfer-1",
+)
 ```
 
-Prepare a swap request:
+Swap example:
 
-```bash
-curl -X POST http://127.0.0.1:8000/v1/mercury/invoke \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: swap-base-1" \
-  -d '{
-    "request_id": "req-swap-1",
-    "user_id": "user-1",
-    "wallet_id": "primary",
-    "intent": {
-      "kind": "swap",
-      "chain": "base",
-      "from_token": "0x000000000000000000000000000000000000cafE",
-      "to_token": "0x000000000000000000000000000000000000dEaD",
-      "amount_in": "10",
-      "max_slippage_bps": 50,
-      "provider_preference": "lifi"
-    }
-  }'
+```python
+response = invoke_mercury(
+    runtime,
+    MercuryInvokeRequest(
+        request_id="req-swap-1",
+        user_id="user-1",
+        wallet_id="primary",
+        idempotency_key="swap-base-1",
+        chain="base",
+        intent={
+            "kind": "swap",
+            "wallet_id": "primary",
+            "from_token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "to_token": "0x4200000000000000000000000000000000000006",
+            "amount_in": "10",
+            "max_slippage_bps": 50,
+        },
+    ),
+    idempotency_key="swap-base-1",
+)
 ```
 
 With the default placeholder approver, value-moving requests return an approval

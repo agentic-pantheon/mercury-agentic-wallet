@@ -1,32 +1,25 @@
-"""FastAPI application factory and Mercury-native routes."""
+"""FastAPI application factory (health, readiness, Alchemy webhooks)."""
 
 from __future__ import annotations
 
 import json
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
 from mercury.chains import list_chains
 from mercury.config import MercurySettings
 from mercury.custody.errors import SecretNotFoundError
 from mercury.graph.runtime import GraphRuntime
 from mercury.graph.webhook_graph import compiled_alchemy_webhook_graph
-from mercury.invoke import MercuryInvoker, get_invoke_guide_markdown
-from mercury.service.dependencies import get_graph_runtime, get_secret_store, get_service_settings
+from mercury.service.dependencies import get_secret_store, get_service_settings
 from mercury.service.errors import DependencyUnavailableError, install_exception_handlers
 from mercury.service.http_logging import MercuryHttpLoggingMiddleware
 from mercury.service.logging import (
     configure_service_logging,
     parse_mercury_log_level,
 )
-from mercury.service.models import (
-    HealthResponse,
-    MercuryInvokeRequest,
-    MercuryInvokeResponse,
-    ReadinessResponse,
-)
+from mercury.service.models import HealthResponse, ReadinessResponse
 from mercury.webhooks.alchemy_dedupe import AlchemyWebhookDedupeStore
 from mercury.webhooks.alchemy_handler import merge_watched_addresses
 from mercury.webhooks.alchemy_verify import is_valid_signature_for_string_body
@@ -85,31 +78,6 @@ def create_app(
             service=effective_settings.app_name,
             default_chain=effective_settings.default_chain,
             supported_chains=supported,
-        )
-
-    @app.get("/v1/mercury/invoke/guide")
-    def mercury_invoke_guide() -> Response:
-        """Return Markdown instructions for using ``POST /v1/mercury/invoke``."""
-
-        return Response(
-            content=get_invoke_guide_markdown(),
-            media_type="text/markdown; charset=utf-8",
-        )
-
-    @app.post("/v1/mercury/invoke", response_model=MercuryInvokeResponse)
-    def invoke_mercury(
-        request: Request,
-        payload: MercuryInvokeRequest,
-        graph_runtime: Annotated[GraphRuntime, Depends(get_graph_runtime)],
-        x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
-        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    ) -> MercuryInvokeResponse:
-        request_id = payload.effective_request_id(x_request_id)
-        request.state.request_id = request_id
-        return MercuryInvoker(graph_runtime).invoke(
-            payload,
-            x_request_id=x_request_id,
-            idempotency_key=idempotency_key,
         )
 
     @app.post("/v1/webhooks/alchemy/address-activity")

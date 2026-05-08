@@ -146,9 +146,9 @@ def test_invoke_response_serializes_validation_details_with_embedded_exceptions(
     assert "Invalid EVM address" in str(dumped)
 
 
-def test_get_invoke_guide_markdown_matches_http_guide_contract() -> None:
+def test_get_invoke_guide_markdown_matches_bundled_guide() -> None:
     body = get_invoke_guide_markdown()
-    assert "POST /v1/mercury/invoke" in body
+    assert "MercuryInvokeRequest" in body
     assert len(body) > 200
 
 

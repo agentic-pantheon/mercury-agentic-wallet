@@ -11,7 +11,7 @@ MERCURY_SUBAGENT_RESUME_AFTER_APPROVAL = (
     "Call `mercury_invoke` now with `intent_json` that is IDENTICAL to your previous "
     "mercury_invoke for this operation: same `kind`, fields, amounts, addresses, and the "
     "same `idempotency_key` inside the intent as before. Do not substitute a new intent. "
-    "Do not describe wallet UI steps; completion is via Mercury HTTP + 1Claw signer."
+    "Do not describe wallet UI steps; completion is via Mercury in-process invoke + 1Claw signer."
 )
 
 MERCURY_SUPERVISOR_TOOL_DESCRIPTION = """Mercury specialist: real balances, wallets, Base/Ethereum/L2, txs, approvals.
@@ -30,7 +30,7 @@ again immediately with instructions for the specialist to repeat the **same**
 ``mercury_invoke`` intent as before (same ``kind``, fields, ``idempotency_key``)—never
 a new intent for the gated operation.
 
-Completion is normally a second Mercury HTTP request with approval; prefer that over
+Completion is normally a second Mercury invoke with approval; prefer that over
 asking the user to use browser wallets unless product docs say otherwise.
 """
 
