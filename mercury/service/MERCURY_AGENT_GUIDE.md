@@ -480,6 +480,31 @@ Placing **`approval_response` only inside `intent`** does **not** wire into the 
 }
 ```
 
+**Selling native gas token (e.g. ETH on Base):** use the canonical zero placeholder as ``from_token``: ``0x0000000000000000000000000000000000000000``. Some clients use ``0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE``; Mercury normalizes that to the same sentinel. **``to_token``** must still be a checksummed **ERC-20** contract (not the sentinel). **``amount_in``** for native sells is interpreted with **18** decimals.
+
+Mercury skips the ERC-20 allowance/approval preparation when ``from_token`` is the native sentinel; the resulting swap transaction may carry **non-zero native ``value``** (wei). **LiFi** supports these routes in Mercury. **CoW** and **Uniswap** adapter paths reject selling the native asset directly unless you swap using **wrapped** native (e.g. WETH) as ``from_token``.
+
+### Example: Base ETH → USDC (native ``from_token``, LiFi)
+
+```json
+{
+  "request_id": "req-native-sell-1",
+  "user_id": "user-1",
+  "wallet_id": "primary",
+  "idempotency_key": "swap-base-eth-native-1",
+  "intent": {
+    "kind": "swap",
+    "chain": "base",
+    "wallet_id": "primary",
+    "from_token": "0x0000000000000000000000000000000000000000",
+    "to_token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "amount_in": "0.01",
+    "max_slippage_bps": 50,
+    "provider_preference": "lifi"
+  }
+}
+```
+
 ---
 
 ## Responses
