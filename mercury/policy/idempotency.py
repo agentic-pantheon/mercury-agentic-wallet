@@ -37,7 +37,10 @@ class DuplicateTransactionError(ValueError):
 
 
 class InMemoryIdempotencyStore:
-    """Process-local idempotency store for tests and MVP runtime."""
+    """Process-local idempotency store for tests and MVP runtime.
+
+    See deployment docs for scaling this beyond a single worker process.
+    """
 
     def __init__(self) -> None:
         self._records: dict[str, IdempotencyRecord] = {}
@@ -59,6 +62,18 @@ class InMemoryIdempotencyStore:
             record = IdempotencyRecord(key=key, status=IdempotencyStatus.IN_FLIGHT)
             self._records[key] = record
             return record
+
+    def release(self, key: str) -> None:
+        """Remove an ``IN_FLIGHT`` reservation so the key can be used again.
+
+        Used when signing or broadcasting fails before a transaction is submitted.
+        No-op if the key is missing or already ``COMPLETED``.
+        """
+
+        with self._lock:
+            existing = self._records.get(key)
+            if existing is not None and existing.status == IdempotencyStatus.IN_FLIGHT:
+                del self._records[key]
 
     def complete(self, key: str, result: ExecutionResult) -> IdempotencyRecord:
         """Store the final execution result for a reserved key."""

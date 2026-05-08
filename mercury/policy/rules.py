@@ -6,6 +6,11 @@ from mercury.models.erc20 import MAX_UINT256, ZERO_ADDRESS, ERC20Action
 from mercury.models.execution import ExecutableTransaction
 from mercury.models.simulation import SimulationResult
 
+# transfer(address,uint256) and approve(address,uint256) selectors (4-byte prefixes).
+ERC20_TRANSFER_SELECTOR_PREFIX = "0xa9059cbb"
+ERC20_APPROVAL_SELECTOR_PREFIX = "0x095ea7b3"
+MIN_STANDARD_ERC20_CALLDATA_LENGTH = 138
+
 NATIVE_TRANSFER_ACTION = "native_transfer"
 
 
@@ -76,7 +81,10 @@ def erc20_policy_reason(
         if transaction.value_wei != 0:
             return "ERC20 transfer must not send native token value."
         data = transaction.data if isinstance(transaction.data, str) else "0x"
-        if not data.lower().startswith("0xa9059cbb") or len(data) < 138:
+        if (
+            not data.lower().startswith(ERC20_TRANSFER_SELECTOR_PREFIX)
+            or len(data) < MIN_STANDARD_ERC20_CALLDATA_LENGTH
+        ):
             return "ERC20 transfer calldata must be a standard transfer(address,uint256) call."
 
         recipient = _metadata_address(transaction, "recipient_address")
@@ -97,7 +105,10 @@ def erc20_policy_reason(
         if transaction.value_wei != 0:
             return "ERC20 approval must not send native token value."
         data = transaction.data if isinstance(transaction.data, str) else "0x"
-        if not data.lower().startswith("0x095ea7b3") or len(data) < 138:
+        if (
+            not data.lower().startswith(ERC20_APPROVAL_SELECTOR_PREFIX)
+            or len(data) < MIN_STANDARD_ERC20_CALLDATA_LENGTH
+        ):
             return "ERC20 approval calldata must be a standard approve(address,uint256) call."
 
         spender = _metadata_address(transaction, "spender_address")

@@ -6,8 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import ValidationError
-
+from mercury.graph.preparation_helpers import state_for_preparation_error
 from mercury.graph.request_metadata import merge_intent_metadata_into_prepared
 from mercury.graph.router import (
     ROUTE_REJECT_TRANSACTION,
@@ -15,7 +14,6 @@ from mercury.graph.router import (
     ROUTE_SWAP_TYPED_ORDER_READY,
 )
 from mercury.graph.state import MercuryState
-from mercury.models.errors import normalize_exception, validation_failed_from_pydantic
 from mercury.models.policy import PolicyDecision, PolicyDecisionStatus
 from mercury.models.swaps import SwapExecutionType, SwapIntent
 from mercury.policy.swap_rules import SwapPolicyConfig
@@ -49,10 +47,8 @@ def make_swap_prepare_node(deps: SwapGraphDependencies) -> Callable[[MercuryStat
                 address_resolver=deps.address_resolver,
                 policy_config=deps.policy_config,
             )
-        except ValidationError as exc:
-            return {"error": validation_failed_from_pydantic(exc, stage="prepare_swap_transaction")}
         except Exception as exc:
-            return {"error": normalize_exception(exc, stage="prepare_swap_transaction")}
+            return state_for_preparation_error(exc, stage="prepare_swap_transaction")
 
         updates: MercuryState = {
             "prepared_swap": prepared,

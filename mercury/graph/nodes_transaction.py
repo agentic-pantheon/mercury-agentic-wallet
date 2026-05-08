@@ -240,6 +240,7 @@ def make_sign_transaction_node(
             )
             return {"signed_transaction": signed}
         except Exception as exc:
+            _release_idempotency_after_pre_broadcast_failure(deps, state)
             return {
                 "execution_result": _result_from_state(
                     state,
@@ -263,6 +264,7 @@ def make_broadcast_transaction_node(
             tx_hash = deps.backend.broadcast(state["signed_transaction"])
             return {"tx_hash": tx_hash}
         except Exception as exc:
+            _release_idempotency_after_pre_broadcast_failure(deps, state)
             return {
                 "execution_result": _result_from_state(
                     state,
@@ -304,6 +306,7 @@ def make_monitor_receipt_node(
                 tx_hash=state.get("tx_hash"),
                 error=normalize_exception(exc, stage="monitor_receipt"),
             )
+            _finalize_idempotency_after_monitor_failure(deps, state, result)
             return {"execution_result": result}
 
     return monitor_receipt
@@ -332,6 +335,46 @@ def reject_transaction(state: MercuryState) -> MercuryState:
             error=err,
         )
     }
+
+
+def _idempotency_key_from_state(state: MercuryState) -> str | None:
+    transaction = state.get("executable_transaction")
+    if isinstance(transaction, ExecutableTransaction):
+        key = transaction.idempotency_key
+        return key if isinstance(key, str) and key else None
+    return None
+
+
+def _release_idempotency_after_pre_broadcast_failure(
+    deps: TransactionGraphDependencies,
+    state: MercuryState,
+) -> None:
+    """Clear ``IN_FLIGHT`` when no transaction was submitted (sign or broadcast failed)."""
+
+    key = _idempotency_key_from_state(state)
+    if key is not None:
+        deps.idempotency_store.release(key)
+
+
+def _finalize_idempotency_after_monitor_failure(
+    deps: TransactionGraphDependencies,
+    state: MercuryState,
+    result: ExecutionResult,
+) -> None:
+    """After broadcast, never release the key: replay must not resubmit.
+
+    If we have a tx hash, record the terminal result. Otherwise clear ``IN_FLIGHT``
+    (unexpected graph state).
+    """
+
+    key = _idempotency_key_from_state(state)
+    if key is None:
+        return
+    tx_hash = state.get("tx_hash")
+    if isinstance(tx_hash, str) and tx_hash.strip():
+        deps.idempotency_store.complete(key, result)
+    else:
+        deps.idempotency_store.release(key)
 
 
 def _prepared_from_state(state: MercuryState) -> PreparedTransaction:

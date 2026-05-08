@@ -75,6 +75,12 @@ from mercury.graph.state import MercuryState
 from mercury.tools.registry import ReadOnlyToolRegistry
 
 
+def _read_registry_tool(registry: ReadOnlyToolRegistry, name: str) -> Any:
+    """Relax typing for LangGraph ``add_node`` (tool nodes expose Runnable-like callables)."""
+
+    return cast(Any, make_read_tool_node(name, registry))
+
+
 def build_graph(registry: ReadOnlyToolRegistry | None = None) -> StateGraph[MercuryState]:
     """Build the uncompiled read-only graph.
 
@@ -90,39 +96,39 @@ def build_graph(registry: ReadOnlyToolRegistry | None = None) -> StateGraph[Merc
     builder.add_node("unsupported_response", unsupported_response)
     builder.add_node(
         "get_native_balance",
-        cast(Any, make_read_tool_node("get_native_balance", tool_registry)),
+        _read_registry_tool(tool_registry, "get_native_balance"),
     )
     builder.add_node(
         "get_erc20_balance",
-        cast(Any, make_read_tool_node("get_erc20_balance", tool_registry)),
+        _read_registry_tool(tool_registry, "get_erc20_balance"),
     )
     builder.add_node(
         "get_erc20_allowance",
-        cast(Any, make_read_tool_node("get_erc20_allowance", tool_registry)),
+        _read_registry_tool(tool_registry, "get_erc20_allowance"),
     )
     builder.add_node(
         "get_erc20_metadata",
-        cast(Any, make_read_tool_node("get_erc20_metadata", tool_registry)),
+        _read_registry_tool(tool_registry, "get_erc20_metadata"),
     )
     builder.add_node(
         "read_contract",
-        cast(Any, make_read_tool_node("read_contract", tool_registry)),
+        _read_registry_tool(tool_registry, "read_contract"),
     )
     builder.add_node(
         "resolve_known_address",
-        cast(Any, make_read_tool_node("resolve_known_address", tool_registry)),
+        _read_registry_tool(tool_registry, "resolve_known_address"),
     )
     builder.add_node(
         "get_token_prices",
-        cast(Any, make_read_tool_node("get_token_prices", tool_registry)),
+        _read_registry_tool(tool_registry, "get_token_prices"),
     )
     builder.add_node(
         "get_portfolio_tokens",
-        cast(Any, make_read_tool_node("get_portfolio_tokens", tool_registry)),
+        _read_registry_tool(tool_registry, "get_portfolio_tokens"),
     )
     builder.add_node(
         "get_transfer_history",
-        cast(Any, make_read_tool_node("get_transfer_history", tool_registry)),
+        _read_registry_tool(tool_registry, "get_transfer_history"),
     )
     builder.add_node("format_response", format_response)
 
