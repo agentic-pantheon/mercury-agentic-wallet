@@ -5,7 +5,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from mercury.chains import get_chain_by_id, get_chain_by_name
-from mercury.models.erc20 import ERC20Amount
+from mercury.models.addresses import normalize_evm_address
+from mercury.models.erc20 import ZERO_ADDRESS, ERC20Amount
 from mercury.models.execution import PreparedTransaction
 from mercury.models.policy import PolicyDecision, PolicyDecisionStatus
 from mercury.models.swaps import (
@@ -29,6 +30,8 @@ from mercury.tools.erc20_transactions import (
     prepare_erc20_approval,
 )
 from mercury.tools.evm import ProviderFactoryLike
+
+NATIVE_SELL_DECIMALS = 18
 
 
 class SwapAllowanceCheck(BaseModel):
@@ -87,12 +90,28 @@ def prepare_swap(
         dest = get_chain_by_id(intent.to_chain_id)
         to_chain_id = dest.chain_id
         to_chain = dest.name
-    token_metadata = get_erc20_metadata(
-        chain=chain.name,
-        token_address=intent.from_token,
-        provider_factory=provider_factory,
-    )
-    amount = ERC20Amount.from_human(intent.amount_in, token_metadata.decimals)
+
+    canonical_native = normalize_evm_address(ZERO_ADDRESS)
+    from_token_is_native = intent.from_token == canonical_native
+    if from_token_is_native:
+        if chain.wrapped_native_token_address is None:
+            raise ValueError(
+                f"Cannot prepare a native token swap on chain {chain.name!r}: "
+                "wrapped native token metadata is not configured for this chain."
+            )
+        wrapped_from_token = normalize_evm_address(chain.wrapped_native_token_address)
+        amount = ERC20Amount.from_human(intent.amount_in, NATIVE_SELL_DECIMALS)
+        from_token_for_request = canonical_native
+    else:
+        token_metadata = get_erc20_metadata(
+            chain=chain.name,
+            token_address=intent.from_token,
+            provider_factory=provider_factory,
+        )
+        amount = ERC20Amount.from_human(intent.amount_in, token_metadata.decimals)
+        from_token_for_request = token_metadata.token_address
+        wrapped_from_token = None
+
     if amount.raw_amount <= 0:
         raise ValueError("Swap amount must be greater than zero.")
 
@@ -101,7 +120,7 @@ def prepare_swap(
         wallet_address=wallet.address,
         chain=chain.name,
         chain_id=chain.chain_id,
-        from_token=token_metadata.token_address,
+        from_token=from_token_for_request,
         to_token=intent.to_token,
         amount_in=intent.amount_in,
         amount_in_raw=amount.raw_amount,
@@ -111,34 +130,38 @@ def prepare_swap(
         idempotency_key=intent.idempotency_key,
         to_chain=to_chain,
         to_chain_id=to_chain_id,
+        from_token_is_native=from_token_is_native,
+        wrapped_from_token=wrapped_from_token,
     )
     quote = router.get_quote(request, provider_preference=intent.provider_preference)
     quote_decision = evaluate_swap_quote_policy(quote, config=policy_config)
     if quote_decision.status == PolicyDecisionStatus.REJECTED:
         return PreparedSwap(quote=quote, quote_policy_decision=quote_decision)
 
-    allowance = check_swap_allowance(
-        quote=quote,
-        provider_factory=provider_factory,
-    )
-    if not allowance.allowance_sufficient:
-        approval = prepare_erc20_approval(
-            chain=quote.request.chain,
-            wallet_id=quote.request.wallet_id,
-            token_address=quote.route.from_token,
-            spender_address=allowance.spender_address,
-            amount=quote.request.amount_in,
-            provider_factory=provider_factory,
-            address_resolver=address_resolver,
-            idempotency_key=f"{quote.request.idempotency_key}:approval",
-            spender_known=True,
-        )
-        return PreparedSwap(
+    allowance = None
+    if not quote.request.from_token_is_native:
+        allowance = check_swap_allowance(
             quote=quote,
-            quote_policy_decision=quote_decision,
-            allowance=allowance,
-            approval_transaction=approval,
+            provider_factory=provider_factory,
         )
+        if not allowance.allowance_sufficient:
+            approval = prepare_erc20_approval(
+                chain=quote.request.chain,
+                wallet_id=quote.request.wallet_id,
+                token_address=quote.route.from_token,
+                spender_address=allowance.spender_address,
+                amount=quote.request.amount_in,
+                provider_factory=provider_factory,
+                address_resolver=address_resolver,
+                idempotency_key=f"{quote.request.idempotency_key}:approval",
+                spender_known=True,
+            )
+            return PreparedSwap(
+                quote=quote,
+                quote_policy_decision=quote_decision,
+                allowance=allowance,
+                approval_transaction=approval,
+            )
 
     execution = router.provider_for(quote.provider).build_execution(quote)
     execution_decision = evaluate_swap_execution_policy(execution, config=policy_config)

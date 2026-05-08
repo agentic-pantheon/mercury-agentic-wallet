@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mercury.models.addresses import normalize_evm_address
+from mercury.models.erc20 import ZERO_ADDRESS
 from mercury.models.native_tokens import normalize_swap_input_from_token
 from mercury.models.transactions import HexData
 
@@ -127,6 +128,19 @@ class SwapQuoteRequest(BaseModel):
         gt=0,
         description="None means same-chain; otherwise the destination chain id for a bridge quote.",
     )
+    from_token_is_native: bool = Field(
+        default=False,
+        description=(
+            "True when selling the chain native token; from_token is the zero placeholder."
+        ),
+    )
+    wrapped_from_token: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Wrapped native token when from_token_is_native; providers use this for routing APIs."
+        ),
+    )
 
     @field_validator("chain", "to_chain")
     @classmethod
@@ -139,6 +153,13 @@ class SwapQuoteRequest(BaseModel):
     @classmethod
     def normalize_from_token(cls, value: str) -> str:
         return normalize_swap_input_from_token(value)
+
+    @field_validator("wrapped_from_token")
+    @classmethod
+    def normalize_wrapped_from_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_evm_address(value)
 
     @field_validator("wallet_address", "to_token", "recipient_address")
     @classmethod
@@ -161,6 +182,24 @@ class SwapQuoteRequest(BaseModel):
             chain = get_chain_by_name(self.to_chain)
             if chain.chain_id != self.to_chain_id:
                 raise ValueError("to_chain and to_chain_id must refer to the same network.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_native_sell_fields(self) -> SwapQuoteRequest:
+        canonical_native = normalize_evm_address(ZERO_ADDRESS)
+        if self.from_token == canonical_native:
+            if not self.from_token_is_native:
+                raise ValueError(
+                    "from_token_is_native must be True when from_token is the "
+                    "canonical native placeholder."
+                )
+            if self.wrapped_from_token is None:
+                raise ValueError("wrapped_from_token is required when selling native currency.")
+        else:
+            if self.from_token_is_native:
+                raise ValueError("from_token_is_native cannot be True for ERC-20 sell tokens.")
+            if self.wrapped_from_token is not None:
+                raise ValueError("wrapped_from_token must be omitted for ERC-20 sell tokens.")
         return self
 
 
