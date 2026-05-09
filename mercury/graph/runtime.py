@@ -11,6 +11,11 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from langchain_core.messages import AIMessage
 
+try:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+except ImportError:  # pragma: no cover - optional for older langgraph installs
+    BaseCheckpointSaver = object  # type: ignore[misc, assignment]
+
 from mercury.config import MercurySettings, get_settings
 from mercury.graph.agent import (
     build_erc20_transaction_graph,
@@ -210,14 +215,28 @@ def build_default_runtime(
     transaction_deps: TransactionGraphDependencies,
     runtime_settings: MercurySettings | None = None,
     ens_resolver: EVMIdentifierResolver | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
 ) -> MercuryGraphRuntime:
     """Build Mercury's default compiled graphs from injectable dependencies."""
 
+    def _compiled(builder: Any) -> InvokableGraph:
+        if checkpointer is None:
+            compiled = builder.compile()
+        else:
+            compiled = builder.compile(checkpointer=checkpointer)
+        return cast(InvokableGraph, compiled)
+
     return MercuryGraphRuntime(
-        read_graph=build_graph(registry).compile(),
-        erc20_graph=build_erc20_transaction_graph(erc20_deps, transaction_deps).compile(),
-        native_graph=build_native_transaction_graph(native_deps, transaction_deps).compile(),
-        swap_graph=build_swap_transaction_graph(swap_deps, transaction_deps).compile(),
+        read_graph=_compiled(build_graph(registry)),
+        erc20_graph=_compiled(
+            build_erc20_transaction_graph(erc20_deps, transaction_deps),
+        ),
+        native_graph=_compiled(
+            build_native_transaction_graph(native_deps, transaction_deps),
+        ),
+        swap_graph=_compiled(
+            build_swap_transaction_graph(swap_deps, transaction_deps),
+        ),
         runtime_settings=runtime_settings,
         ens_resolver=ens_resolver,
     )
