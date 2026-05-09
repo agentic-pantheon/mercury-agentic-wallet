@@ -29,6 +29,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+checkpoint-postgres = [
+    "langgraph-checkpoint-postgres",
+]
 juno = [
     "juno",
 ]

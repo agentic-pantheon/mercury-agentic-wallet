@@ -578,6 +578,13 @@ On success, `MercuryInvokeResponse` carries `request_id`, `status`, `message`, o
 
 ---
 
+## Request correlation and LangGraph checkpoints
+
+- **`request_id`** — callers supply this on HTTP invoke (`X-Request-Id` / payload); it is mirrored into LangSmith-friendly **`RunnableConfig`** metadata and into **`configurable.thread_id`** so LangGraph can associate checkpoints with a logical conversation thread when a checkpoint backend is enabled.
+- **`MERCURY_CHECKPOINTER_DATABASE_URL`** — optional PostgreSQL DSN for **`PostgresSaver`**. Empty means no saver (default). Non-empty requires optional **`mercury[checkpoint-postgres]`**. The FastAPI app lifespan owns the saver when graphs are built lazily via **`get_graph_runtime`**; Juno **`local`** mode still calls **`build_standalone_graph_runtime()`** without automatic Postgres unless you inject a saver yourself.
+
+---
+
 ## Python (in-process invoke)
 
 ```python

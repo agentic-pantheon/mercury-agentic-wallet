@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -24,6 +26,22 @@ from mercury.webhooks.alchemy_dedupe import AlchemyWebhookDedupeStore
 from mercury.webhooks.alchemy_handler import merge_watched_addresses
 from mercury.webhooks.alchemy_verify import is_valid_signature_for_string_body
 from mercury.webhooks.keys import resolve_alchemy_webhook_signing_key
+
+
+@asynccontextmanager
+async def _mercury_app_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Hold Postgres checkpoint connections for the app process lifetime."""
+
+    from mercury.service.checkpointer import mercury_checkpointer
+
+    settings = app.state.settings
+    if getattr(app.state, "graph_runtime", None) is not None:
+        yield
+        return
+
+    with mercury_checkpointer(settings) as saver:
+        app.state.checkpoint_saver = saver
+        yield
 
 
 def _alchemy_webhook_dedupe_store(app: FastAPI) -> AlchemyWebhookDedupeStore:
@@ -53,11 +71,15 @@ def create_app(
     settings: MercurySettings | None = None,
     runtime: GraphRuntime | None = None,
 ) -> FastAPI:
-    """Create the Mercury FastAPI app without touching external services."""
+    """Create the Mercury FastAPI app without touching external services.
+
+    Lifespan holds an optional LangGraph Postgres saver when ``MERCURY_CHECKPOINTER_DATABASE_URL``
+    is set (unless ``runtime=`` pre-injects ``graph_runtime``, in which case no saver is opened).
+    """
 
     effective_settings = settings or MercurySettings()
     configure_service_logging(level=parse_mercury_log_level(effective_settings.log_level))
-    app = FastAPI(title=effective_settings.app_name)
+    app = FastAPI(title=effective_settings.app_name, lifespan=_mercury_app_lifespan)
     app.state.settings = effective_settings
     if runtime is not None:
         app.state.graph_runtime = runtime

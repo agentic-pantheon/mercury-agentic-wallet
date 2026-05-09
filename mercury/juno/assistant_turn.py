@@ -71,12 +71,20 @@ def parse_mercury_body(raw: dict[str, Any]) -> AssistantTurnResult:
     st = effective.get("status")
     if st == "approval_required" or effective.get("approval_required") is True:
         extras = {k: v for k, v in effective.items() if k not in ("status", "approval_required")}
+        approval_payload = effective.get("approval_payload")
+        if isinstance(approval_payload, dict):
+            payload_idem = approval_payload.get("idempotency_key")
+            if isinstance(payload_idem, str) and payload_idem:
+                extras.setdefault("idempotency_key", payload_idem)
         token = effective.get("approval_token") or effective.get("idempotency_key")
         if not isinstance(token, str):
+            token = extras.get("idempotency_key")
+        if not isinstance(token, str):
             token = None
+        approval_id = effective.get("approval_id")
         return AssistantTurnWalletApproval(
             approval_token=token,
-            approval_id=effective.get("approval_id") if isinstance(effective.get("approval_id"), str) else None,
+            approval_id=approval_id if isinstance(approval_id, str) else None,
             extras=extras,
         )
 

@@ -103,6 +103,20 @@ secret references and 1Claw metadata, not secret values.
 Each chain has a 1Claw RPC secret path. `mercury/chains/rpc.py` resolves an RPC URL
 through the `SecretStore` protocol when a provider actually needs it.
 
+### LangGraph checkpoints (optional)
+
+Phase 1 exposes PostgreSQL-backed checkpointing via **`MERCURY_CHECKPOINTER_DATABASE_URL`**
+(a secret-bearing DSN). When empty or whitespace-only, Mercury does **not** attach a
+checkpoint saver—the historical default. When set, the FastAPI lifespan opens a
+**`PostgresSaver`** for the lifetime of the process so compiled graphs can persist
+checkpoints; install **`mercury[checkpoint-postgres]`** (pulls **`langgraph-checkpoint-postgres`**).
+
+Embedders that invoke **`build_standalone_graph_runtime`** outside FastAPI must pass
+**`checkpointer=...`** from their own saver context if they need Postgres
+checkpointing; opening a pool per standalone build leaks connections. If **`create_app`**
+is called with a pre-built **`runtime=`**, the lifespan skips opening Postgres because the
+default **`get_graph_runtime`** path uses that injected runtime.
+
 ### Custody and 1Claw
 
 `mercury/custody/oneclaw.py` contains the secret-store abstraction:

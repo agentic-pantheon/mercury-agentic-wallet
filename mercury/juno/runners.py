@@ -102,12 +102,15 @@ class LocalMercuryAssistantRunner:
                 code="validation_error",
                 details={"errors": exc.errors()},
             )
-        rid = str(uuid.uuid4()) if self._send_x_request_id else None
+        if self._send_x_request_id:
+            header_rid = request.request_id or str(uuid.uuid4())
+        else:
+            header_rid = None
         try:
             response = invoke_mercury(
                 self._runtime,
                 request,
-                x_request_id=rid,
+                x_request_id=header_rid,
                 idempotency_key=idempotency_key,
             )
         except GraphInvocationError as exc:

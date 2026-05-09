@@ -1,3 +1,4 @@
+import pytest
 from mercury.config import MercurySettings
 
 
@@ -5,6 +6,7 @@ def test_default_settings_load_without_secrets() -> None:
     settings = MercurySettings()
 
     assert settings.app_name == "Mercury Wallet Agent"
+    assert settings.checkpointer_database_url == ""
     assert settings.ethereum_rpc_secret_path == "mercury/rpc/ethereum"
     assert settings.base_rpc_secret_path == "mercury/rpc/base"
     assert settings.oneclaw_vault_id == "mercury"
@@ -22,6 +24,19 @@ def test_default_chain_is_ethereum() -> None:
     settings = MercurySettings()
 
     assert settings.default_chain == "ethereum"
+
+
+def test_interrupt_approval_defaults_false() -> None:
+    settings = MercurySettings()
+
+    assert settings.interrupt_approval is False
+
+
+def test_interrupt_approval_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MERCURY_INTERRUPT_APPROVAL", "true")
+    settings = MercurySettings()
+
+    assert settings.interrupt_approval is True
 
 
 def test_rpc_values_are_references_not_secret_values() -> None:
