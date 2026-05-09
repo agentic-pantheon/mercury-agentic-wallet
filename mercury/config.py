@@ -16,6 +16,14 @@ class MercurySettings(BaseSettings):
         default=True,
         description="Log each LangGraph node completion to stderr when True.",
     )
+    interrupt_approval: bool = Field(
+        default=False,
+        description=(
+            "When True, value-moving transactions pause at approval via LangGraph interrupt "
+            "instead of returning approval_denied immediately (requires a graph checkpointer). "
+            "Env MERCURY_INTERRUPT_APPROVAL."
+        ),
+    )
     log_level: str = Field(
         default="DEBUG",
         description=(

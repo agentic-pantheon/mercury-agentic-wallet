@@ -7,6 +7,7 @@ from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any, cast
 
+from mercury.graph.nodes_transaction import APPROVAL_INTERRUPT_KIND
 from mercury.graph.runtime import GraphRuntime
 from mercury.graph.state import MercuryState
 from mercury.models.approval import ApprovalStatus
@@ -256,9 +257,27 @@ def _response_from_state(
         safe_state = {}
 
     execution = _execution_result(state)
+    approval_interrupt = _approval_interrupt_transaction_payload(state)
     approval = _mapping(state.get("approval_result"))
     error = _state_error(state)
     chain = _chain_name(state, fallback_chain)
+
+    if approval_interrupt is not None:
+        intr_safe = redact_value(_jsonable(approval_interrupt))
+        if not isinstance(intr_safe, dict):
+            intr_safe = {}
+        payload_out = dict(intr_safe)
+        payload_out.setdefault("status", ApprovalStatus.REQUIRED.value)
+        payload_out.setdefault("reason", "Human approval is required before execution.")
+        return MercuryInvokeResponse(
+            request_id=request_id,
+            status="approval_required",
+            chain=payload_out.get("chain") or fallback_chain,
+            message="Human approval is required before execution.",
+            data={"approval_interrupt": intr_safe},
+            approval_required=True,
+            approval_payload=redact_value(payload_out),
+        )
 
     if execution is not None:
         execution_payload = redact_value(_jsonable(execution.model_dump(mode="python")))
@@ -329,6 +348,18 @@ def _receipt_payload(execution: ExecutionResult) -> dict[str, Any] | None:
     if execution.gas_used is not None:
         payload["gas_used"] = execution.gas_used
     return payload
+
+
+def _approval_interrupt_transaction_payload(state: MercuryState) -> dict[str, Any] | None:
+    raw = state.get("__interrupt__")
+    if raw is None:
+        return None
+    seq = raw if isinstance(raw, (list, tuple)) else [raw]
+    for item in seq:
+        value = getattr(item, "value", None)
+        if isinstance(value, dict) and value.get("kind") == APPROVAL_INTERRUPT_KIND:
+            return value
+    return None
 
 
 def _approval_required(approval: dict[str, Any] | None) -> bool:

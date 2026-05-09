@@ -125,6 +125,7 @@ def build_standalone_graph_runtime(
         policy_engine=TransactionPolicyEngine(),
         approver=RequestMetadataTransactionApprover(),
         idempotency_store=InMemoryIdempotencyStore(),
+        interrupt_approval=resolved.interrupt_approval,
     )
     alchemy_prices: AlchemyPricesToolDeps | None = None
     alchemy_portfolio: AlchemyPortfolioToolDeps | None = None

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import hashlib
+import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Any
+
+from langgraph.types import interrupt
 
 from mercury.graph.state import MercuryState
-from mercury.models.approval import ApprovalStatus
+from mercury.models.approval import ApprovalResult, ApprovalStatus
 from mercury.models.errors import (
     MercuryErrorInfo,
     approval_denied,
@@ -50,6 +55,89 @@ class TransactionGraphDependencies:
     idempotency_store: InMemoryIdempotencyStore = field(default_factory=InMemoryIdempotencyStore)
     receipt_timeout_seconds: float = 120
     receipt_confirmations: int = 0
+    interrupt_approval: bool = False
+
+
+APPROVAL_INTERRUPT_KIND = "mercury_transaction_approval"
+
+
+def build_transaction_approval_interrupt_payload(tx: ExecutableTransaction) -> dict[str, Any]:
+    """Serializable, secret-safe payload surfaced to clients when approval interrupts."""
+
+    raw_data = tx.data if isinstance(tx.data, str) else ""
+    preview_len = 66
+    data_preview = raw_data[:preview_len]
+    if len(raw_data) > preview_len:
+        data_preview = f"{data_preview}..."
+    idem = tx.idempotency_key
+    idempotency_key = idem if isinstance(idem, str) else ""
+    return {
+        "kind": APPROVAL_INTERRUPT_KIND,
+        "idempotency_key": idempotency_key,
+        "chain": tx.chain,
+        "chain_id": tx.chain_id,
+        "from": tx.from_address,
+        "to": tx.to,
+        "value_wei": str(tx.value_wei) if tx.value_wei is not None else "0",
+        "data_preview": data_preview,
+        "nonce": tx.nonce,
+        "transaction_fingerprint": _transaction_fingerprint(tx),
+    }
+
+
+def approval_result_from_interrupt_resume(
+    raw: Any,
+    *,
+    expected_idempotency_key: str | None,
+    expected_transaction_fingerprint: str | None = None,
+) -> ApprovalResult:
+    """Map a client resume payload (same shape as ``approval_response`` metadata) to a result."""
+
+    if not isinstance(raw, Mapping):
+        return ApprovalResult(
+            status=ApprovalStatus.DENIED,
+            reason="Approval resume payload must be a JSON object.",
+        )
+    mapping = dict(raw)
+    status_raw = str(mapping.get("status", "")).strip().lower()
+    if status_raw == ApprovalStatus.DENIED.value:
+        return ApprovalResult(
+            status=ApprovalStatus.DENIED,
+            reason=str(mapping.get("reason") or "Approval denied."),
+        )
+    if status_raw != ApprovalStatus.APPROVED.value:
+        return ApprovalResult(
+            status=ApprovalStatus.DENIED,
+            reason="Unsupported approval status in resume payload.",
+        )
+    if expected_idempotency_key is None or not str(expected_idempotency_key).strip():
+        return ApprovalResult(
+            status=ApprovalStatus.DENIED,
+            reason="Cannot approve without a transaction idempotency key.",
+        )
+    raw_key = mapping.get("idempotency_key")
+    if raw_key is None or str(raw_key) != str(expected_idempotency_key):
+        return ApprovalResult(
+            status=ApprovalStatus.DENIED,
+            reason="Approval idempotency key is required and must match the transaction.",
+        )
+    raw_fingerprint = mapping.get("transaction_fingerprint")
+    if (
+        expected_transaction_fingerprint is not None
+        and raw_fingerprint is not None
+        and str(raw_fingerprint) != expected_transaction_fingerprint
+    ):
+        return ApprovalResult(
+            status=ApprovalStatus.DENIED,
+            reason="Approval transaction fingerprint does not match the pending transaction.",
+        )
+    approved_by = mapping.get("approved_by")
+    reason = str(mapping.get("reason") or "Approved via interrupt resume.")
+    return ApprovalResult(
+        status=ApprovalStatus.APPROVED,
+        reason=reason,
+        approved_by=str(approved_by) if approved_by is not None else None,
+    )
 
 
 def make_resolve_nonce_node(
@@ -168,19 +256,8 @@ def make_approval_node(
 
     def request_approval(state: MercuryState) -> MercuryState:
         try:
-            approval = deps.approver.request_approval(
-                build_approval_request(_executable_from_state(state))
-            )
-            if approval.status != ApprovalStatus.APPROVED:
-                return {
-                    "approval_result": approval,
-                    "execution_result": _result_from_state(
-                        state,
-                        status=ExecutionStatus.APPROVAL_DENIED,
-                        error=approval_denied(message=approval.reason, stage="request_approval"),
-                    ),
-                }
-            return {"approval_result": approval}
+            executable = _executable_from_state(state)
+            approval = deps.approver.request_approval(build_approval_request(executable))
         except Exception as exc:
             return {
                 "execution_result": _result_from_state(
@@ -190,7 +267,44 @@ def make_approval_node(
                 )
             }
 
+        if deps.interrupt_approval and approval.status == ApprovalStatus.REQUIRED:
+            payload = build_transaction_approval_interrupt_payload(executable)
+            resume_raw = interrupt(payload)
+            approval = approval_result_from_interrupt_resume(
+                resume_raw,
+                expected_idempotency_key=executable.idempotency_key,
+                expected_transaction_fingerprint=payload.get("transaction_fingerprint"),
+            )
+
+        if approval.status != ApprovalStatus.APPROVED:
+            return {
+                "approval_result": approval,
+                "execution_result": _result_from_state(
+                    state,
+                    status=ExecutionStatus.APPROVAL_DENIED,
+                    error=approval_denied(message=approval.reason, stage="request_approval"),
+                ),
+            }
+        return {"approval_result": approval}
+
     return request_approval
+
+
+def _transaction_fingerprint(tx: ExecutableTransaction) -> str:
+    """Stable hash for binding an approval resume to the checkpointed transaction."""
+
+    payload = {
+        "chain": tx.chain,
+        "chain_id": tx.chain_id,
+        "from_address": tx.from_address,
+        "to": tx.to,
+        "value_wei": str(tx.value_wei) if tx.value_wei is not None else "0",
+        "data": tx.data,
+        "nonce": tx.nonce,
+        "idempotency_key": tx.idempotency_key,
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def make_idempotency_node(
