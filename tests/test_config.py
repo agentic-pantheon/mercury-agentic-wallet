@@ -5,6 +5,7 @@ def test_default_settings_load_without_secrets() -> None:
     settings = MercurySettings()
 
     assert settings.app_name == "Mercury Wallet Agent"
+    assert settings.checkpointer_database_url == ""
     assert settings.ethereum_rpc_secret_path == "mercury/rpc/ethereum"
     assert settings.base_rpc_secret_path == "mercury/rpc/base"
     assert settings.oneclaw_vault_id == "mercury"

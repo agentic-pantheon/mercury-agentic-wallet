@@ -89,6 +89,17 @@ class MercurySettings(BaseSettings):
         description="Optional 1Claw agent ID used for scoped secret reads.",
     )
 
+    checkpointer_database_url: str = Field(
+        default="",
+        description=(
+            "PostgreSQL connection URL for LangGraph checkpoint persistence; env "
+            "``MERCURY_CHECKPOINTER_DATABASE_URL``. When empty or whitespace-only, "
+            "Mercury does not attach a checkpoint saver (default behavior). When "
+            "set, the FastAPI app lifespan opens ``PostgresSaver`` for the graph "
+            "runtime (requires optional ``checkpoint-postgres`` extras)."
+        ),
+    )
+
 
 def get_settings() -> MercurySettings:
     """Return application settings from the current process environment.

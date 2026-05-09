@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated, cast
+from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import Depends, Request
 
@@ -29,14 +29,17 @@ from mercury.swaps.cowswap import CowSwapProvider
 from mercury.swaps.lifi import LiFiProvider
 from mercury.swaps.router import SwapRouter
 from mercury.swaps.uniswap import UniswapProvider
-from mercury.tools.registry import ReadOnlyToolRegistry
 from mercury.tools.portfolio_tokens import AlchemyPortfolioToolDeps
+from mercury.tools.registry import ReadOnlyToolRegistry
 from mercury.tools.token_prices import AlchemyPricesToolDeps
-from mercury.tools.transfer_history import AlchemyTransfersToolDeps
 from mercury.tools.transactions import (
     RequestMetadataTransactionApprover,
     Web3TransactionBackend,
 )
+from mercury.tools.transfer_history import AlchemyTransfersToolDeps
+
+if TYPE_CHECKING:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 
 def get_service_settings(request: Request) -> MercurySettings:
@@ -95,8 +98,20 @@ def get_swap_router(
     )
 
 
-def build_standalone_graph_runtime(settings: MercurySettings | None = None) -> GraphRuntime:
-    """Construct the default graph runtime without a FastAPI ``Request`` (shared with Juno local mode)."""
+def build_standalone_graph_runtime(
+    settings: MercurySettings | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,  # type: ignore[type-arg]
+) -> GraphRuntime:
+    """Construct the default graph runtime without a FastAPI ``Request``.
+
+    Shared with Juno local mode. Pass ``checkpointer`` to compile graphs with a
+    persistent saver; when omitted and graphs are built via FastAPI
+    :func:`~mercury.service.dependencies.get_graph_runtime`, the app lifespan supplies
+    the saver from :envvar:`MERCURY_CHECKPOINTER_DATABASE_URL` when set.
+
+    Outside FastAPI, leave ``checkpointer`` as ``None`` unless you manage Postgres
+    checkpoint lifecycle yourself (see ``mercury.service.checkpointer``).
+    """
 
     resolved = settings if settings is not None else get_settings()
     secret_store = get_secret_store(resolved)
@@ -149,6 +164,7 @@ def build_standalone_graph_runtime(settings: MercurySettings | None = None) -> G
         transaction_deps=transaction_deps,
         runtime_settings=resolved,
         ens_resolver=ens_resolver,
+        checkpointer=checkpointer,
     )
 
 
@@ -160,7 +176,8 @@ def get_graph_runtime(request: Request) -> GraphRuntime:
         return cast(GraphRuntime, runtime)
 
     settings = get_service_settings(request)
-    runtime = build_standalone_graph_runtime(settings)
+    injected = getattr(request.app.state, "checkpoint_saver", None)
+    runtime = build_standalone_graph_runtime(settings, checkpointer=injected)
     request.app.state.graph_runtime = runtime
     return runtime
 

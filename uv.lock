@@ -948,6 +948,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+checkpoint-postgres = [
+    { name = "langgraph-checkpoint-postgres" },
+]
 juno = [
     { name = "juno" },
 ]
@@ -968,6 +971,7 @@ requires-dist = [
     { name = "juno", marker = "extra == 'juno'", editable = "../juno" },
     { name = "langchain-core" },
     { name = "langgraph" },
+    { name = "langgraph-checkpoint-postgres", marker = "extra == 'checkpoint-postgres'" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml", specifier = ">=6" },
@@ -975,7 +979,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.46.0" },
     { name = "web3", specifier = ">=7.15.0" },
 ]
-provides-extras = ["juno"]
+provides-extras = ["checkpoint-postgres", "juno"]
 
 [package.metadata.requires-dev]
 dev = [
