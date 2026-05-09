@@ -1,9 +1,7 @@
 """Mercury invoke JSON parsing and LocalMercuryAssistantRunner (Juno plugin)."""
 
 import pytest
-
 from juno.approval_markers import JUNO_WALLET_APPROVAL_UI_MARKER
-
 from mercury.graph.state import MercuryState
 from mercury.juno.assistant_turn import (
     AssistantTurnAgentError,
@@ -141,7 +139,10 @@ def test_local_run_turn_success_and_idempotency() -> None:
 def test_local_run_turn_body_idempotency_key_not_overwritten() -> None:
     fake = _FakeRuntime({"response_text": "x", "chain_name": "base"})
     runner = LocalMercuryAssistantRunner(fake)  # type: ignore[arg-type]
-    runner.run_turn({**_MIN_INVOKE_PAYLOAD, "idempotency_key": "from-body"}, idempotency_key="from-arg")
+    runner.run_turn(
+        {**_MIN_INVOKE_PAYLOAD, "idempotency_key": "from-body"},
+        idempotency_key="from-arg",
+    )
     raw = fake.invocations[0].get("raw_input")
     assert isinstance(raw, dict)
     assert raw.get("idempotency_key") == "from-body"

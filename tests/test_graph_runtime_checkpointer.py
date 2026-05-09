@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from mercury.graph.runtime import build_default_runtime
 from mercury.graph.nodes_erc20 import ERC20GraphDependencies
 from mercury.graph.nodes_native import NativeGraphDependencies
 from mercury.graph.nodes_swaps import SwapGraphDependencies
 from mercury.graph.nodes_transaction import TransactionGraphDependencies
+from mercury.graph.runtime import build_default_runtime
 from mercury.tools.registry import ReadOnlyToolRegistry
 
 

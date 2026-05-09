@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command, Interrupt
-
 from mercury.config import MercurySettings
 from mercury.graph.agent import build_native_transaction_graph, build_transaction_graph
 from mercury.graph.nodes_native import NativeGraphDependencies

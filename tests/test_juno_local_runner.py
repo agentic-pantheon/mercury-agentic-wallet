@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from mercury.graph.state import MercuryState
 from mercury.invoke import get_invoke_guide_markdown
 from mercury.juno.assistant_turn import AssistantTurnAgentError, AssistantTurnSuccess
@@ -120,7 +119,9 @@ def test_fetch_get_text_invoke_guide() -> None:
 
 def test_fetch_get_text_unsupported_path_is_deterministic() -> None:
     runner = LocalMercuryAssistantRunner(_FakeRuntime({}))  # type: ignore[arg-type]
-    assert runner.fetch_get_text("/v1/other") == "(Local guide unavailable: unsupported path /v1/other)"
+    assert runner.fetch_get_text("/v1/other") == (
+        "(Local guide unavailable: unsupported path /v1/other)"
+    )
     assert runner.fetch_get_text("mercury/invoke-guide") == get_invoke_guide_markdown()
 
 

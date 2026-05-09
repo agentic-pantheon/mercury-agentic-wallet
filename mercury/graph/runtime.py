@@ -6,7 +6,7 @@ LangSmith / LangChain tracing picks up RunnableConfig supplied to ``invoke`` / `
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol, cast, runtime_checkable
 
 from langchain_core.messages import AIMessage
@@ -126,7 +126,7 @@ class MercuryGraphRuntime:
             intent_kind=ik,
         )
 
-        input_payload: MercuryState | Command = working_state
+        input_payload: MercuryState | Command[Any] = working_state
         if settings.interrupt_approval:
             _raise_if_interrupt_approval_without_checkpointer(settings, graph, graph_label)
             resume_payload = _approval_response_from_state(working_state)
@@ -246,7 +246,7 @@ def _approval_response_from_state(state: MercuryState) -> dict[str, Any] | None:
     return nested if isinstance(nested, dict) else None
 
 
-def _tasks_have_pending_interrupt(tasks: object) -> bool:
+def _tasks_have_pending_interrupt(tasks: Iterable[Any] | None) -> bool:
     if not tasks:
         return False
     for task in tasks:
@@ -262,7 +262,7 @@ def _pending_interrupt(graph: InvokableGraph, config: dict[str, Any]) -> bool:
         return False
     snapshot = get_state(config)
     tasks = getattr(snapshot, "tasks", None)
-    return _tasks_have_pending_interrupt(tasks)
+    return _tasks_have_pending_interrupt(tasks if isinstance(tasks, Iterable) else None)
 
 
 def _intent_kind_from_state(state: MercuryState) -> str:
@@ -288,7 +288,7 @@ def build_default_runtime(
     transaction_deps: TransactionGraphDependencies,
     runtime_settings: MercurySettings | None = None,
     ens_resolver: EVMIdentifierResolver | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
 ) -> MercuryGraphRuntime:
     """Build Mercury's default compiled graphs from injectable dependencies."""
 

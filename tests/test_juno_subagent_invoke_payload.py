@@ -7,7 +7,6 @@ import uuid
 
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage
-
 from mercury.graph.state import MercuryState
 from mercury.juno.manifest import JunoAssistantManifest
 from mercury.juno.runners import LocalMercuryAssistantRunner
@@ -51,7 +50,9 @@ def test_sanitize_strips_nested_approval_normalizes_idempotency() -> None:
 
 
 def test_sanitize_no_idempotency() -> None:
-    cleaned, idem = _sanitize_intent_for_mercury_post({"kind": "native_balance", "wallet_address": "0xabc"})
+    cleaned, idem = _sanitize_intent_for_mercury_post(
+        {"kind": "native_balance", "wallet_address": "0xabc"}
+    )
     assert idem is None
     assert "idempotency_key" not in cleaned
 
@@ -81,7 +82,11 @@ def test_build_payload_fills_approval_idempotency_from_intent() -> None:
         {
             "user_id": "u1",
             "wallet_id": "primary",
-            "approval_response": {"status": "approved", "approved_by": "telegram_user", "reason": "ok"},
+            "approval_response": {
+                "status": "approved",
+                "approved_by": "telegram_user",
+                "reason": "ok",
+            },
         },
         {"kind": "erc20_transfer"},
         idempotency_key="idem-swap-1",

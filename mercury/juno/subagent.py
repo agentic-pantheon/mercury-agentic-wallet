@@ -3,26 +3,24 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, NotRequired
 
+from juno.agents.remote_guide_middleware import build_remote_invoke_guide_middleware
+from juno.agents.state import CustomAgentState
 from langchain.agents import create_agent
 from langchain.tools import InjectedState, tool
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.graph.state import CompiledStateGraph
-from typing_extensions import NotRequired
-
-from juno.agents.remote_guide_middleware import build_remote_invoke_guide_middleware
-from juno.agents.state import CustomAgentState
 
 from mercury.juno.manifest import JunoAssistantManifest
 from mercury.juno.runners import MercuryAssistantRunnerLike
 from mercury.juno.tool_text import turn_result_to_tool_text
 
 
-class MercuryJunoAgentState(CustomAgentState):
+class MercuryJunoAgentState(CustomAgentState):  # type: ignore[misc]
     """Juno agent state for the Mercury specialist, including resume correlation."""
 
-    mercury_pending_request_id: NotRequired[str | None]
+    mercury_pending_request_id: NotRequired[str | None]  # type: ignore[valid-type]
 
 
 def _normalize_approval_response(raw: Any) -> dict[str, Any] | None:
@@ -151,14 +149,20 @@ def build_mercury_juno_subagent(
         if intent.get("kind") is None:
             return 'Intent must include a string "kind" field.'
         intent_clean, idempotency_key = _sanitize_intent_for_mercury_post(intent)
-        payload = _build_mercury_invoke_payload(state, intent_clean, idempotency_key=idempotency_key)
+        payload = _build_mercury_invoke_payload(
+            state,
+            intent_clean,
+            idempotency_key=idempotency_key,
+        )
         result = runner.run_turn(payload, idempotency_key=idempotency_key)
         return turn_result_to_tool_text(result)
 
     guide_path = (manifest.guide_path or "").strip()
     middleware: tuple[Any, ...] = ()
     if guide_path:
-        middleware = (build_remote_invoke_guide_middleware(lambda: runner.fetch_get_text(guide_path)),)
+        middleware = (
+            build_remote_invoke_guide_middleware(lambda: runner.fetch_get_text(guide_path)),
+        )
 
     return create_agent(
         model=model,

@@ -81,9 +81,10 @@ def parse_mercury_body(raw: dict[str, Any]) -> AssistantTurnResult:
             token = extras.get("idempotency_key")
         if not isinstance(token, str):
             token = None
+        approval_id = effective.get("approval_id")
         return AssistantTurnWalletApproval(
             approval_token=token,
-            approval_id=effective.get("approval_id") if isinstance(effective.get("approval_id"), str) else None,
+            approval_id=approval_id if isinstance(approval_id, str) else None,
             extras=extras,
         )
 

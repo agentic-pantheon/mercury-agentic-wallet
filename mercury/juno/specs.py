@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from langgraph.graph.state import CompiledStateGraph
-
 from juno.agents.registry import SubagentSpec
+from langgraph.graph.state import CompiledStateGraph
 
 MERCURY_SUBAGENT_RESUME_AFTER_APPROVAL = (
     "Session already includes `approval_response` from Telegram (human approved). "
@@ -18,7 +17,8 @@ MERCURY_SUBAGENT_RESUME_AFTER_APPROVAL = (
     "Mercury in-process invoke + 1Claw signer."
 )
 
-MERCURY_SUPERVISOR_TOOL_DESCRIPTION = """Mercury specialist: real balances, wallets, Base/Ethereum/L2, txs, approvals.
+MERCURY_SUPERVISOR_TOOL_DESCRIPTION = """Mercury specialist:
+real balances, wallets, Base/Ethereum/L2, transactions, and approvals.
 
 **When to call:** Any request involving money/crypto, wallets, holdings, named
 chains (e.g. Base, Ethereum, L2), transactions, swaps, transfers, approvals, gas,

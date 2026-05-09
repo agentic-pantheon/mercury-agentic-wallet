@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 try:
     from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -20,7 +21,7 @@ _CHECKPOINT_POSTGRES_EXTRA_HINT = (
 )
 
 
-def _postgres_saver_type() -> type[object]:
+def _postgres_saver_type() -> Any:
     """Return the optional Postgres saver class or raise a clear dependency error."""
 
     try:

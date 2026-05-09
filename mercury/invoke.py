@@ -73,7 +73,7 @@ def invoke_mercury(
     x_request_id: str | None = None,
     idempotency_key: str | None = None,
 ) -> MercuryInvokeResponse:
-    """Invoke Mercury (graph runtime) with request/response mapping aligned to ``MercuryInvoke*`` models."""
+    """Invoke Mercury with request/response mapping aligned to ``MercuryInvoke*`` models."""
 
     return MercuryInvoker(runtime).invoke(
         payload,
