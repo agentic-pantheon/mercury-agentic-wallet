@@ -101,6 +101,17 @@ def test_local_run_turn_body_idempotency_not_overwritten() -> None:
     assert raw.get("idempotency_key") == "from-body"
 
 
+def test_local_run_turn_request_id_from_body_is_graph_state_request_id() -> None:
+    returned: MercuryState = {"response_text": "ok"}
+    fake = _FakeRuntime(returned)
+    runner = LocalMercuryAssistantRunner(fake)  # type: ignore[arg-type]
+    pl = dict(_minimal_payload())
+    pl["request_id"] = "body-rid-99"
+    runner.run_turn(pl)
+    assert len(fake.invocations) == 1
+    assert fake.invocations[0].get("request_id") == "body-rid-99"
+
+
 def test_fetch_get_text_invoke_guide() -> None:
     runner = LocalMercuryAssistantRunner(_FakeRuntime({}))  # type: ignore[arg-type]
     md = runner.fetch_get_text("/mercury/invoke-guide")

@@ -29,6 +29,11 @@ def turn_result_to_tool_text(result: AssistantTurnResult) -> str:
             idem = result.extras.get("idempotency_key")
         if not isinstance(idem, str):
             idem = result.approval_token or result.approval_id
+        req_id = None
+        if result.extras:
+            rid = result.extras.get("request_id")
+            if isinstance(rid, str) and rid.strip():
+                req_id = rid.strip()
         parts = [
             "Wallet approval required (Mercury approval gate).",
             f"approval_token={result.approval_token!r}",
@@ -36,15 +41,18 @@ def turn_result_to_tool_text(result: AssistantTurnResult) -> str:
         ]
         if isinstance(idem, str) and idem:
             parts.append(f'idempotency_key="{idem}"')
+        if req_id:
+            parts.append(f'request_id="{req_id}"')
         hint_parts: list[str] = []
         if result.extras:
             hint_parts.append(f"details={json.dumps(result.extras, default=str)}")
         hint_parts.append(
-            "Juno/Telegram: user taps Approve, then sends any message. Juno will call Mercury "
-            "again with the SAME intent (including the same idempotency_key inside the intent) "
-            "and top-level approval_response. Do not instruct MetaMask/hardware signing unless "
+            "Save request_id: on the next mercury_invoke (after Telegram approve), session should "
+            "carry mercury_pending_request_id equal to that value, with the same intent, same "
+            "idempotency_key inside the intent, and top-level approval_response whose "
+            "idempotency_key matches. Do not instruct MetaMask/hardware signing unless "
             "this deployment explicitly uses in-wallet signing; the default path is a second "
-            "Repeat Mercury invoke with approval_response (1Claw-backed signer)."
+            "Mercury invoke with approval_response (1Claw-backed signer)."
         )
         parts.append(" ".join(hint_parts))
         return f"{JUNO_WALLET_APPROVAL_UI_MARKER}\n" + "\n".join(parts)
